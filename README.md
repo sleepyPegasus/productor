@@ -13,7 +13,7 @@ AI 驱动的产品需求文档 (PRD) 自动生成工具。输入自然语言需�
 | 组件 | 技术 |
 |------|------|
 | 文本生成 | DeepSeek V3 (需求分析、PRD生成、反馈处理) |
-| 图像生成 | Nanobanana Pro (产品原型图) |
+| 图像生成 | GLM-Image (产品原型图) |
 | 运行时 | Node.js 18+ |
 
 ## 快速开始
@@ -33,7 +33,7 @@ cp .env.example .env
 
 需要配置：
 - `DEEPSEEK_API_KEY` - DeepSeek V3 API 密钥
-- `NANOBANANA_API_KEY` - Nanobanana Pro API 密钥
+- `GLM_IMAGE_API_KEY` - GLM-Image API 密钥
 
 ### 3. 运行
 
@@ -49,12 +49,12 @@ src/
 ├── agent/
 │   ├── orchestrator.js         # 流程编排引擎
 │   ├── requirementAnalyzer.js  # 需求分析 Agent (DeepSeek V3)
-│   ├── prototypeGenerator.js   # 原型生成 Agent (Nanobanana Pro)
+│   ├── prototypeGenerator.js   # 原型生成 Agent (GLM-Image)
 │   ├── prdGenerator.js         # PRD 生成 Agent (DeepSeek V3)
 │   └── feedbackProcessor.js    # 反馈处理 Agent (DeepSeek V3)
 ├── models/
 │   ├── deepseek.js             # DeepSeek V3 API 客户端
-│   └── nanobanana.js           # Nanobanana Pro API 客户端
+│   └── glm-image.js            # GLM-Image API 客户端
 ├── templates/
 │   ├── prd-template.md         # PRD 文档模板
 │   └── prompts/                # 各阶段 Prompt 模板

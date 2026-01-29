@@ -1,17 +1,17 @@
 /**
- * Nanobanana Pro API 客户端
+ * GLM-Image API 客户端 (智谱 AI CogView)
  * 用于生成产品原型图/线框图
  */
 
 import { logger } from '../utils/logger.js';
 
-const DEFAULT_BASE_URL = 'https://api.nanobanana.com/v1';
-const MODEL_NAME = 'nanobanana-pro';
+const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+const MODEL_NAME = 'cogview-3-plus';
 
-export class NanobananaClient {
+export class GLMImageClient {
   /**
    * @param {object} config
-   * @param {string} config.apiKey - Nanobanana API Key
+   * @param {string} config.apiKey - GLM-Image API Key
    * @param {string} [config.baseUrl] - API 基础 URL
    * @param {string} [config.model] - 模型名称
    */
@@ -50,7 +50,7 @@ export class NanobananaClient {
       response_format: 'b64_json',
     };
 
-    logger.step('Nanobanana', `生成图片: ${prompt.slice(0, 60)}...`);
+    logger.step('GLM-Image', `生成图片: ${prompt.slice(0, 60)}...`);
 
     try {
       const response = await fetch(url, {
@@ -64,24 +64,24 @@ export class NanobananaClient {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Nanobanana API 错误 (${response.status}): ${errorText}`);
+        throw new Error(`GLM-Image API 错误 (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
       const result = data.data?.[0];
 
       if (!result) {
-        throw new Error('Nanobanana API 返回空结果');
+        throw new Error('GLM-Image API 返回空结果');
       }
 
-      logger.success('Nanobanana 图片生成成功');
+      logger.success('GLM-Image 图片生成成功');
 
       return {
         base64: result.b64_json || null,
         url: result.url || null,
       };
     } catch (error) {
-      logger.error(`Nanobanana 图片生成失败: ${error.message}`);
+      logger.error(`GLM-Image 图片生成失败: ${error.message}`);
       throw error;
     }
   }
@@ -93,7 +93,7 @@ export class NanobananaClient {
    * @returns {Promise<Array<{fileName: string, base64: string | null, url: string | null, error: string | null}>>}
    */
   async batchGenerate(tasks, options = {}) {
-    logger.step('Nanobanana', `批量生成 ${tasks.length} 张图片`);
+    logger.step('GLM-Image', `批量生成 ${tasks.length} 张图片`);
 
     const results = [];
     for (const task of tasks) {

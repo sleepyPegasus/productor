@@ -8,7 +8,7 @@
 |------|---------|------------|--------|
 | 需求收集 | 人工访谈、问卷 | 自然语言输入 + AI 追问补全 | 降低沟通成本，结构化输出 |
 | 需求分析 | 产品经理手动拆解 | DeepSeek V3 自动分析拆解 | 速度快，覆盖面广，不遗漏边界 |
-| 产品原型 | UI 设计师手动绘制 | Nanobanana Pro 生成线框图 | 快速出图，支持多方案对比 |
+| 产品原型 | UI 设计师手动绘制 | GLM-Image 生成线框图 | 快速出图，支持多方案对比 |
 | PRD 编写 | 产品经理手动撰写 | DeepSeek V3 按模板生成 | 格式统一，内容完整，可追溯 |
 | 需求确认 | 线下会议评审 | AI 辅助对比 + 用户在线确认 | 可迭代，版本可控 |
 
@@ -34,7 +34,7 @@
 │                                                         │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────┐ │
 │  │ 需求输入  │──▶│ 需求分析  │──▶│ 原型生成  │──▶│ PRD │ │
-│  │ (User)   │   │(DeepSeek)│   │(Nanobanana)│   │生成 │ │
+│  │ (User)   │   │(DeepSeek)│   │(GLM-Image)│   │生成 │ │
 │  └──────────┘   └──────────┘   └──────────┘   └──┬──┘ │
 │       ▲                                          │     │
 │       │         ┌──────────┐                     │     │
@@ -53,7 +53,7 @@
 | 需求分析 | DeepSeek V3 | 需求拆解、结构化、补全 | 中文理解能力强，推理能力优秀 |
 | PRD 生成 | DeepSeek V3 | 按模板填充 PRD 内容 | 长文本生成质量高，格式遵循好 |
 | 反馈处理 | DeepSeek V3 | 解析用户反馈，修正文档 | 理解上下文能力强 |
-| 原型生成 | Nanobanana Pro | 生成产品线框图/原型图 | 图像生成质量高 |
+| 原型生成 | GLM-Image | 生成产品线框图/原型图 | 图像生成质量高 |
 
 ### 2.2 Agent 工具链
 
@@ -64,7 +64,7 @@
 ├─────────────────────────────────────────┤
 │                                         │
 │  ┌─────────────┐  ┌─────────────────┐   │
-│  │ DeepSeek V3 │  │ Nanobanana Pro  │   │
+│  │ DeepSeek V3 │  │ GLM-Image  │   │
 │  │  API Client │  │   API Client    │   │
 │  └──────┬──────┘  └───────┬─────────┘   │
 │         │                 │             │
@@ -154,7 +154,7 @@
 │     布局描述文本             │
 │                             │
 │ Step 3: 原型图生成           │
-│   - Nanobanana Pro          │
+│   - GLM-Image          │
 │     生成线框图/原型图        │
 │   - 每个关键页面一张图       │
 └─────────────┬───────────────┘
@@ -293,7 +293,7 @@ PRD 文档 + 原型图
 - **运行时**: Node.js 18+
 - **语言**: JavaScript (ES Modules)
 - **文本模型**: DeepSeek V3 (通过 OpenAI 兼容 API)
-- **图像模型**: Nanobanana Pro (通过 REST API)
+- **图像模型**: GLM-Image (通过 REST API)
 - **输出格式**: Markdown (PRD), PNG (原型图), JSON (状态)
 
 ### 5.2 目录结构
@@ -310,7 +310,7 @@ productor/
 │   │   └── feedbackProcessor.js    # 反馈处理 Agent
 │   ├── models/
 │   │   ├── deepseek.js             # DeepSeek V3 客户端
-│   │   └── nanobanana.js           # Nanobanana Pro 客户端
+│   │   └── glm-image.js           # GLM-Image 客户端
 │   ├── templates/
 │   │   ├── prd-template.md         # PRD Markdown 模板
 │   │   └── prompts/

@@ -40,11 +40,11 @@ const IMAGE_NEGATIVE_PROMPT = 'colorful, photorealistic, 3d rendering, artistic,
 export class PrototypeGenerator {
   /**
    * @param {import('../models/deepseek.js').DeepSeekClient} deepseekClient
-   * @param {import('../models/nanobanana.js').NanobananaClient} nanobananaClient
+   * @param {import('../models/glm-image.js').GLMImageClient} glmImageClient
    */
-  constructor(deepseekClient, nanobananaClient) {
+  constructor(deepseekClient, glmImageClient) {
     this.deepseek = deepseekClient;
-    this.nanobanana = nanobananaClient;
+    this.glmImage = glmImageClient;
   }
 
   /**
@@ -111,7 +111,7 @@ export class PrototypeGenerator {
       structuredRequirement.productType || 'web'
     );
 
-    // Step 3: 调用 Nanobanana Pro 生成图片
+    // Step 3: 调用 GLM-Image 生成图片
     logger.step('原型生成', `开始生成 ${imagePrompts.length} 张原型图...`);
 
     const tasks = imagePrompts.map((item) => ({
@@ -119,7 +119,7 @@ export class PrototypeGenerator {
       fileName: `${item.pageId}_${item.pageName}.png`,
     }));
 
-    const results = await this.nanobanana.batchGenerate(tasks, {
+    const results = await this.glmImage.batchGenerate(tasks, {
       width: 1024,
       height: 768,
       negativePrompt: IMAGE_NEGATIVE_PROMPT,
