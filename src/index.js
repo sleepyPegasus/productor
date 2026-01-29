@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { logger } from './utils/logger.js';
 import { DeepSeekClient } from './models/deepseek.js';
-import { NanobananaClient } from './models/nanobanana.js';
+import { GLMImageClient } from './models/glm-image.js';
 import { Orchestrator } from './agent/orchestrator.js';
 import { ensureDir } from './utils/fileManager.js';
 
@@ -24,10 +24,10 @@ function loadConfig() {
       baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     },
-    nanobanana: {
-      apiKey: process.env.NANOBANANA_API_KEY || '',
-      baseUrl: process.env.NANOBANANA_BASE_URL || 'https://api.nanobanana.com/v1',
-      model: process.env.NANOBANANA_MODEL || 'nanobanana-pro',
+    glmImage: {
+      apiKey: process.env.GLM_IMAGE_API_KEY || '',
+      baseUrl: process.env.GLM_IMAGE_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
+      model: process.env.GLM_IMAGE_MODEL || 'cogview-3-plus',
     },
     outputDir: resolve(process.env.OUTPUT_DIR || './output'),
   };
@@ -123,7 +123,7 @@ async function main() {
 
   logger.banner('AI-PRD Generator Agent v1.0');
   console.log('  将您的产品构想转化为专业的 PRD 文档');
-  console.log('  模型: DeepSeek V3 (文本) + Nanobanana Pro (图像)\n');
+  console.log('  模型: DeepSeek V3 (文本) + GLM-Image (图像)\n');
 
   // 检查 API Key
   if (!config.deepseek.apiKey) {
@@ -132,20 +132,20 @@ async function main() {
     logger.info('演示模式: 将使用模拟数据运行\n');
   }
 
-  if (!config.nanobanana.apiKey) {
-    logger.warn('未设置 NANOBANANA_API_KEY 环境变量');
+  if (!config.glmImage.apiKey) {
+    logger.warn('未设置 GLM_IMAGE_API_KEY 环境变量');
     logger.info('原型图生成将被跳过\n');
   }
 
   // 初始化客户端
   const deepseekClient = new DeepSeekClient(config.deepseek);
-  const nanobananaClient = new NanobananaClient(config.nanobanana);
+  const glmImageClient = new GLMImageClient(config.glmImage);
 
   await ensureDir(config.outputDir);
 
   const orchestrator = new Orchestrator({
     deepseekClient,
-    nanobananaClient,
+    glmImageClient,
     outputDir: config.outputDir,
   });
 

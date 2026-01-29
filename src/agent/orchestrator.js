@@ -29,17 +29,17 @@ export class Orchestrator {
   /**
    * @param {object} config
    * @param {import('../models/deepseek.js').DeepSeekClient} config.deepseekClient
-   * @param {import('../models/nanobanana.js').NanobananaClient} config.nanobananaClient
+   * @param {import('../models/glm-image.js').GLMImageClient} config.glmImageClient
    * @param {string} config.outputDir - 输出根目录
    */
   constructor(config) {
     this.deepseek = config.deepseekClient;
-    this.nanobanana = config.nanobananaClient;
+    this.glmImage = config.glmImageClient;
     this.outputDir = config.outputDir;
 
     // 初始化各 Agent
     this.requirementAnalyzer = new RequirementAnalyzer(this.deepseek);
-    this.prototypeGenerator = new PrototypeGenerator(this.deepseek, this.nanobanana);
+    this.prototypeGenerator = new PrototypeGenerator(this.deepseek, this.glmImage);
     this.prdGenerator = new PRDGenerator(this.deepseek);
     this.feedbackProcessor = new FeedbackProcessor(this.deepseek);
 
