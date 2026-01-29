@@ -84,3 +84,18 @@ export async function saveBase64Image(filePath, base64Data) {
   logger.success(`图片已保存: ${filePath}`);
   return filePath;
 }
+
+/**
+ * 从 URL 下载图片并保存到本地
+ */
+export async function downloadAndSaveImage(filePath, imageUrl) {
+  await ensureDir(dirname(filePath));
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`下载图片失败 (${response.status}): ${imageUrl}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  await writeFile(filePath, Buffer.from(arrayBuffer));
+  logger.success(`图片已下载保存: ${filePath}`);
+  return filePath;
+}

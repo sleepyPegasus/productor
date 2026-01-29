@@ -7,6 +7,7 @@
  * 流程: 用户需求 → 需求分析 → 原型生成 → PRD 生成 → 用户确认 → 迭代循环
  */
 
+import 'dotenv/config';
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { logger } from './utils/logger.js';
@@ -26,8 +27,8 @@ function loadConfig() {
     },
     glmImage: {
       apiKey: process.env.GLM_IMAGE_API_KEY || '',
-      baseUrl: process.env.GLM_IMAGE_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-      model: process.env.GLM_IMAGE_MODEL || 'cogview-3-plus',
+      baseUrl: process.env.GLM_IMAGE_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/images/generations',
+      model: process.env.GLM_IMAGE_MODEL || 'glm-image',
     },
     outputDir: resolve(process.env.OUTPUT_DIR || './output'),
   };
