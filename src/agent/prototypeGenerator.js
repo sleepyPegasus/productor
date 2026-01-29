@@ -5,7 +5,7 @@
 
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
-import { saveBase64Image } from '../utils/fileManager.js';
+import { downloadAndSaveImage } from '../utils/fileManager.js';
 
 const PAGE_PLANNING_PROMPT = `你是一位资深 UI/UX 设计师和产品架构师。根据提供的结构化产品需求，你需要规划产品的页面结构。
 
@@ -34,8 +34,6 @@ Page: {pageName} - {pageDescription}.
 Layout: {layoutDescription}.
 Key elements: {keyElements}.
 Style: minimal wireframe, clean lines, grayscale, professional UI design, modern interface layout, clearly labeled sections and buttons, no decorative elements, blueprint style.`;
-
-const IMAGE_NEGATIVE_PROMPT = 'colorful, photorealistic, 3d rendering, artistic, decorative, blurry, low quality, text heavy';
 
 export class PrototypeGenerator {
   /**
@@ -120,12 +118,10 @@ export class PrototypeGenerator {
     }));
 
     const results = await this.glmImage.batchGenerate(tasks, {
-      width: 1024,
-      height: 768,
-      negativePrompt: IMAGE_NEGATIVE_PROMPT,
+      size: '1024x768',
     });
 
-    // Step 4: 保存图片到本地
+    // Step 4: 下载并保存图片到本地
     const prototypes = [];
     const protoDir = join(outputDir, 'prototypes');
 
@@ -133,15 +129,26 @@ export class PrototypeGenerator {
       const result = results[i];
       const pageInfo = imagePrompts[i];
 
-      if (result.base64) {
-        const filePath = join(protoDir, result.fileName);
-        await saveBase64Image(filePath, result.base64);
-        prototypes.push({
-          pageId: pageInfo.pageId,
-          pageName: pageInfo.pageName,
-          imagePath: filePath,
-          prompt: pageInfo.prompt,
-        });
+      if (result.url) {
+        try {
+          const filePath = join(protoDir, result.fileName);
+          await downloadAndSaveImage(filePath, result.url);
+          prototypes.push({
+            pageId: pageInfo.pageId,
+            pageName: pageInfo.pageName,
+            imagePath: filePath,
+            prompt: pageInfo.prompt,
+          });
+        } catch (downloadError) {
+          logger.warn(`页面 "${pageInfo.pageName}" 图片下载失败: ${downloadError.message}`);
+          prototypes.push({
+            pageId: pageInfo.pageId,
+            pageName: pageInfo.pageName,
+            imagePath: null,
+            prompt: pageInfo.prompt,
+            error: downloadError.message,
+          });
+        }
       } else {
         logger.warn(`页面 "${pageInfo.pageName}" 原型图生成失败: ${result.error}`);
         prototypes.push({

@@ -5,8 +5,8 @@
 
 import { logger } from '../utils/logger.js';
 
-const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
-const MODEL_NAME = 'cogview-3-plus';
+const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4/images/generations';
+const MODEL_NAME = 'glm-image';
 
 export class GLMImageClient {
   /**
@@ -25,29 +25,19 @@ export class GLMImageClient {
    * 生成图片
    * @param {object} options
    * @param {string} options.prompt - 图片描述提示词
-   * @param {string} [options.negativePrompt] - 负向提示词
-   * @param {number} [options.width=1024] - 图片宽度
-   * @param {number} [options.height=768] - 图片高度
-   * @param {number} [options.steps=30] - 生成步数
-   * @returns {Promise<{base64: string, url: string | null}>} 生成结果
+   * @param {string} [options.size='1024x1024'] - 图片尺寸 (如 '1024x1024', '1024x768')
+   * @returns {Promise<{url: string}>} 生成结果 (GLM-Image 返回图片 URL)
    */
   async generateImage({
     prompt,
-    negativePrompt = '',
-    width = 1024,
-    height = 768,
-    steps = 30,
+    size = '1024x1024',
   }) {
-    const url = `${this.baseUrl}/images/generations`;
+    const url = this.baseUrl;
 
     const body = {
       model: this.model,
       prompt,
-      negative_prompt: negativePrompt,
-      width,
-      height,
-      num_inference_steps: steps,
-      response_format: 'b64_json',
+      size,
     };
 
     logger.step('GLM-Image', `生成图片: ${prompt.slice(0, 60)}...`);
@@ -70,15 +60,14 @@ export class GLMImageClient {
       const data = await response.json();
       const result = data.data?.[0];
 
-      if (!result) {
+      if (!result || !result.url) {
         throw new Error('GLM-Image API 返回空结果');
       }
 
       logger.success('GLM-Image 图片生成成功');
 
       return {
-        base64: result.b64_json || null,
-        url: result.url || null,
+        url: result.url,
       };
     } catch (error) {
       logger.error(`GLM-Image 图片生成失败: ${error.message}`);
@@ -90,7 +79,8 @@ export class GLMImageClient {
    * 批量生成多张图片
    * @param {Array<{prompt: string, fileName: string}>} tasks - 生成任务列表
    * @param {object} [options] - 通用选项
-   * @returns {Promise<Array<{fileName: string, base64: string | null, url: string | null, error: string | null}>>}
+   * @param {string} [options.size='1024x1024'] - 图片尺寸
+   * @returns {Promise<Array<{fileName: string, url: string | null, error: string | null}>>}
    */
   async batchGenerate(tasks, options = {}) {
     logger.step('GLM-Image', `批量生成 ${tasks.length} 张图片`);
@@ -104,7 +94,6 @@ export class GLMImageClient {
         });
         results.push({
           fileName: task.fileName,
-          base64: result.base64,
           url: result.url,
           error: null,
         });
@@ -112,7 +101,6 @@ export class GLMImageClient {
         logger.warn(`图片 "${task.fileName}" 生成失败: ${error.message}`);
         results.push({
           fileName: task.fileName,
-          base64: null,
           url: null,
           error: error.message,
         });
