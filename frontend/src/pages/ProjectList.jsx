@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchProjects, createProject, deleteProject } from '../services/api'
+import { fetchProjects, createProject, deleteProject, exportPRDAsDocx } from '../services/api'
 import './ProjectList.css'
 
 const STATUS_LABELS = {
@@ -29,6 +29,7 @@ export default function ProjectList() {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [loading, setLoading] = useState(false)
+  const [exportingId, setExportingId] = useState(null)
   const navigate = useNavigate()
 
   const load = async () => {
@@ -68,6 +69,41 @@ export default function ProjectList() {
       load()
     } catch {
       alert('删除失败')
+    }
+  }
+
+  const handleViewPRD = (e, projectId) => {
+    e.stopPropagation()
+    navigate(`/project/${projectId}`)
+  }
+
+  const handleDownloadPRD = async (e, projectId, projectName) => {
+    e.stopPropagation()
+    if (exportingId) return
+    setExportingId(projectId)
+    try {
+      await exportPRDAsDocx(projectId, projectName)
+    } catch {
+      alert('导出失败，请重试')
+    } finally {
+      setExportingId(null)
+    }
+  }
+
+  const handleViewDesign = (e, projectId) => {
+    e.stopPropagation()
+    navigate(`/project/${projectId}?tab=design`)
+  }
+
+  const hasPrd = (p) => !!p.prd_content
+
+  const hasDesigns = (p) => {
+    if (!p.design_images) return false
+    try {
+      const arr = JSON.parse(p.design_images)
+      return Array.isArray(arr) && arr.length > 0
+    } catch {
+      return false
     }
   }
 
@@ -119,6 +155,38 @@ export default function ProjectList() {
               </span>
             </div>
             {p.description && <p className="card-desc">{p.description}</p>}
+
+            {/* Action buttons */}
+            <div className="card-actions">
+              <button
+                className={`card-action-btn ${hasPrd(p) ? '' : 'btn-disabled'}`}
+                onClick={(e) => hasPrd(p) && handleViewPRD(e, p.id)}
+                disabled={!hasPrd(p)}
+                title={hasPrd(p) ? '查看 PRD 文档' : '尚未生成 PRD'}
+              >
+                <span className="action-icon">📄</span>
+                查看 PRD
+              </button>
+              <button
+                className={`card-action-btn ${hasPrd(p) ? '' : 'btn-disabled'}`}
+                onClick={(e) => hasPrd(p) && handleDownloadPRD(e, p.id, p.name)}
+                disabled={!hasPrd(p) || exportingId === p.id}
+                title={hasPrd(p) ? '下载 Word 文档' : '尚未生成 PRD'}
+              >
+                <span className="action-icon">⬇️</span>
+                {exportingId === p.id ? '下载中...' : '下载 PRD'}
+              </button>
+              <button
+                className={`card-action-btn ${hasPrd(p) ? '' : 'btn-disabled'}`}
+                onClick={(e) => hasPrd(p) && handleViewDesign(e, p.id)}
+                disabled={!hasPrd(p)}
+                title={hasPrd(p) ? (hasDesigns(p) ? '查看界面设计' : '前往生成界面设计') : '请先生成 PRD'}
+              >
+                <span className="action-icon">🎨</span>
+                {hasDesigns(p) ? '查看设计' : '界面设计'}
+              </button>
+            </div>
+
             <div className="card-footer">
               <span className="card-meta">
                 v{p.version} &middot; {formatTime(p.updated_at)}

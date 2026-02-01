@@ -34,13 +34,19 @@ def init_db():
             structured_requirement TEXT DEFAULT '',
             pages_plan TEXT DEFAULT '',
             prd_content TEXT DEFAULT '',
+            design_images TEXT DEFAULT '[]',
             history TEXT DEFAULT '[]',
             chat_history TEXT DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
     """)
-    conn.commit()
+    # Migrate: add design_images column if missing
+    try:
+        conn.execute("SELECT design_images FROM projects LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE projects ADD COLUMN design_images TEXT DEFAULT '[]'")
+        conn.commit()
     conn.close()
 
 
@@ -68,7 +74,7 @@ def create_project(name: str, description: str = "") -> dict:
 def list_projects() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, name, description, status, version, created_at, updated_at "
+        "SELECT id, name, description, status, version, prd_content, design_images, created_at, updated_at "
         "FROM projects ORDER BY updated_at DESC"
     ).fetchall()
     conn.close()
