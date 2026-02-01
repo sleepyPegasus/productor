@@ -94,6 +94,12 @@
   color: var(--text-secondary);
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-small {
   background: var(--primary-light);
   color: var(--primary);
@@ -106,6 +112,22 @@
 }
 .btn-small:hover {
   background: #dbeafe;
+}
+.btn-small:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-export {
+  background: #ecfdf5;
+  color: #059669;
+}
+.btn-export:hover {
+  background: #d1fae5;
+}
+.btn-export:disabled {
+  background: #f0fdf4;
+  color: #86efac;
 }
 
 .prd-content {
@@ -229,6 +251,27 @@
 
 .markdown-body input[type="checkbox"] {
   margin-right: 6px;
+}
+
+/* PRD Image styles */
+.prd-image-figure {
+  margin: 16px 0;
+  text-align: center;
+}
+
+.prd-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.prd-image-caption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 /* -------- Right: Chat Panel -------- */
