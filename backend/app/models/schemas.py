@@ -33,6 +33,8 @@ class ProjectResponse(BaseModel):
     version: int
     prd_content: Optional[str] = None
     structured_requirement: Optional[str] = None
+    pages_plan: Optional[str] = None
+    design_images: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -43,6 +45,8 @@ class ProjectListItem(BaseModel):
     description: str
     status: ProjectStatus
     version: int
+    prd_content: Optional[str] = None
+    design_images: Optional[str] = None
     created_at: str
     updated_at: str
 

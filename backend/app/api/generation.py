@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from app.agents.orchestrator import (
     run_full_pipeline_stream,
     run_revision_pipeline_stream,
+    run_design_generation_stream,
 )
 from app.db.database import (
     append_chat_message,
@@ -131,6 +132,68 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
             )
             append_chat_message(project_id, "assistant", prd_content)
             append_version_history(project_id, "revised", feedback)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/{project_id}/generate-designs")
+async def api_generate_designs(project_id: str):
+    """Generate UI design images based on project's PRD and requirement.
+
+    Streams SSE events:
+      - status: progress messages
+      - image: individual generated image data (page_id, page_name, image_url)
+      - done: generation finished with all images
+    """
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if not project["prd_content"]:
+        raise HTTPException(status_code=400, detail="请先生成 PRD 文档")
+
+    structured = {}
+    if project["structured_requirement"]:
+        try:
+            structured = json.loads(project["structured_requirement"])
+        except json.JSONDecodeError:
+            pass
+
+    pages_plan = None
+    if project["pages_plan"]:
+        try:
+            pages_plan = json.loads(project["pages_plan"])
+        except json.JSONDecodeError:
+            pass
+
+    async def event_stream():
+        all_images = []
+
+        async for event_str in run_design_generation_stream(
+            structured, pages_plan, project["prd_content"]
+        ):
+            event = json.loads(event_str)
+
+            if event["type"] == "image":
+                image_data = json.loads(event["data"])
+                all_images.append(image_data)
+
+            yield f"data: {event_str}\n\n"
+
+        # Persist generated images to DB
+        if all_images:
+            update_project(
+                project_id,
+                design_images=json.dumps(all_images, ensure_ascii=False),
+            )
 
     return StreamingResponse(
         event_stream(),

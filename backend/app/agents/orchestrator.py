@@ -317,6 +317,84 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
     }) + "\n"
 
 
+async def run_design_generation_stream(
+    structured_requirement: dict,
+    pages_plan: Optional[dict],
+    prd_content: str,
+) -> AsyncGenerator[str, None]:
+    """Generate UI design images as a standalone step.
+
+    If no pages_plan exists, re-generate it from the structured requirement.
+    Then generate images for each page, yielding progress events.
+
+    Yields JSON-line events: status, image, done, error
+    """
+    product_name = structured_requirement.get("productName", "")
+
+    # Step 1: Ensure pages_plan exists
+    if not pages_plan or not pages_plan.get("pages"):
+        yield json.dumps({"type": "status", "data": "正在分析页面结构..."}) + "\n"
+        try:
+            pages_plan = await plan_pages(structured_requirement)
+        except Exception as e:
+            yield json.dumps({"type": "error", "data": f"页面结构分析失败: {str(e)}"}) + "\n"
+            return
+
+    pages = pages_plan.get("pages", [])
+    if not pages:
+        yield json.dumps({"type": "error", "data": "未找到可生成的页面"}) + "\n"
+        return
+
+    total = len(pages)
+    yield json.dumps({
+        "type": "status",
+        "data": f"共 {total} 个页面，开始生成界面设计图...",
+    }) + "\n"
+
+    # Step 2: Generate images concurrently (max 4 at a time)
+    if not settings.GLM_IMAGE_API_KEY:
+        yield json.dumps({
+            "type": "error",
+            "data": "未配置图片生成 API（GLM_IMAGE_API_KEY），无法生成界面设计图",
+        }) + "\n"
+        return
+
+    semaphore = asyncio.Semaphore(4)
+    results = {}
+
+    async def gen_one(page, idx):
+        page_id = page.get("id", f"page_{idx}")
+        page_name = page.get("name", f"页面{idx + 1}")
+        prompt = _build_image_prompt(page, product_name)
+        async with semaphore:
+            url = await generate_image(prompt)
+        if url:
+            results[page_id] = {
+                "page_id": page_id,
+                "page_name": page_name,
+                "image_url": url,
+                "prompt": prompt,
+            }
+
+    await asyncio.gather(*(gen_one(p, i) for i, p in enumerate(pages)))
+
+    # Yield results one by one in page order
+    for i, page in enumerate(pages):
+        page_id = page.get("id", f"page_{i}")
+        if page_id in results:
+            yield json.dumps({
+                "type": "image",
+                "data": json.dumps(results[page_id], ensure_ascii=False),
+            }) + "\n"
+
+    generated_count = len(results)
+    yield json.dumps({
+        "type": "status",
+        "data": f"界面设计图生成完成，共 {generated_count}/{total} 张",
+    }) + "\n"
+    yield json.dumps({"type": "done", "data": f"已生成 {generated_count} 张界面设计图"}) + "\n"
+
+
 async def run_revision_pipeline_stream(
     current_prd: str,
     structured_requirement: dict,

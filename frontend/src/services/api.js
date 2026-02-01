@@ -146,6 +146,80 @@ export async function exportPRDAsDocx(projectId, projectName = 'PRD') {
 }
 
 /**
+ * Start UI design image generation via SSE stream.
+ * @param {string} projectId
+ * @param {object} callbacks - { onImage, onStatus, onDone, onError }
+ * @returns {function} abort function
+ */
+export function generateDesigns(projectId, callbacks) {
+  const controller = new AbortController();
+
+  fetch(`${BASE}/projects/${projectId}/generate-designs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('设计图生成请求失败');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function read() {
+        reader
+          .read()
+          .then(({ done, value }) => {
+            if (done) {
+              callbacks.onDone?.();
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.replace(/^data:\s*/, '').trim();
+              if (!trimmed) continue;
+              try {
+                const event = JSON.parse(trimmed);
+                switch (event.type) {
+                  case 'image':
+                    callbacks.onImage?.(JSON.parse(event.data));
+                    break;
+                  case 'status':
+                    callbacks.onStatus?.(event.data);
+                    break;
+                  case 'done':
+                    callbacks.onDone?.(event.data);
+                    break;
+                  case 'error':
+                    callbacks.onError?.(event.data);
+                    break;
+                }
+              } catch {
+                // skip malformed line
+              }
+            }
+            read();
+          })
+          .catch((err) => {
+            if (err.name !== 'AbortError') {
+              callbacks.onError?.(err.message);
+            }
+          });
+      }
+      read();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError?.(err.message);
+      }
+    });
+
+  return () => controller.abort();
+}
+
+/**
  * Revise PRD via SSE stream.
  * Same callback shape as generatePRD.
  */
