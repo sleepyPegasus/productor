@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { generatePRD, getChatHistory, getProject, revisePRD } from '../services/api'
+import { exportPRDAsDocx, generatePRD, getChatHistory, getProject, revisePRD } from '../services/api'
 import './PRDWorkspace.css'
 
 export default function PRDWorkspace() {
@@ -16,6 +16,7 @@ export default function PRDWorkspace() {
   const [status, setStatus] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   const abortRef = useRef(null)
   const chatEndRef = useRef(null)
@@ -133,6 +134,19 @@ export default function PRDWorkspace() {
     setStatus('')
   }
 
+  const handleExportDocx = async () => {
+    if (exporting || !prdContent) return
+    setExporting(true)
+    setError('')
+    try {
+      await exportPRDAsDocx(id, project?.name || 'PRD')
+    } catch (err) {
+      setError(err.message || '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (error && !project) {
     return (
       <div className="workspace-error">
@@ -174,22 +188,47 @@ export default function PRDWorkspace() {
           <div className="panel-header">
             <h3>PRD 文档</h3>
             {prdContent && (
-              <button
-                className="btn-small"
-                onClick={() => {
-                  navigator.clipboard.writeText(prdContent)
-                  setStatus('已复制到剪贴板')
-                  setTimeout(() => setStatus(''), 2000)
-                }}
-              >
-                复制
-              </button>
+              <div className="panel-actions">
+                <button
+                  className="btn-small"
+                  onClick={() => {
+                    navigator.clipboard.writeText(prdContent)
+                    setStatus('已复制到剪贴板')
+                    setTimeout(() => setStatus(''), 2000)
+                  }}
+                >
+                  复制
+                </button>
+                <button
+                  className="btn-small btn-export"
+                  onClick={handleExportDocx}
+                  disabled={exporting || streaming}
+                >
+                  {exporting ? '导出中...' : '导出 Word'}
+                </button>
+              </div>
             )}
           </div>
           <div className="prd-content">
             {prdContent ? (
               <div className="markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    img: ({ node, alt, src, ...props }) => (
+                      <figure className="prd-image-figure">
+                        <img
+                          src={src}
+                          alt={alt || ''}
+                          className="prd-image"
+                          loading="lazy"
+                          {...props}
+                        />
+                        {alt && <figcaption className="prd-image-caption">{alt}</figcaption>}
+                      </figure>
+                    ),
+                  }}
+                >
                   {prdContent}
                 </ReactMarkdown>
                 <div ref={prdEndRef} />

@@ -3,10 +3,12 @@
 Coordinates the multi-phase pipeline:
   Phase 1: Requirement Analysis
   Phase 2: Prototype Page Planning
+  Phase 2.5: UI Image Generation
   Phase 3: PRD Generation
   Phase 4: Feedback Revision
 """
 
+import asyncio
 import json
 import os
 from collections.abc import AsyncGenerator
@@ -15,6 +17,7 @@ from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
+from app.agents.image_generator import generate_image
 from app.agents.llm import get_chat_llm, get_streaming_llm
 from app.config import settings
 
@@ -89,12 +92,64 @@ async def plan_pages(structured_requirement: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Phase 2.5: UI Image Generation
+# ---------------------------------------------------------------------------
+
+def _build_image_prompt(page: dict, product_name: str = "") -> str:
+    """Build an image generation prompt from a page plan entry."""
+    name = page.get("name", "页面")
+    desc = page.get("description", "")
+    elements = ", ".join(page.get("keyElements", []))
+    layout = page.get("layoutDescription", "")
+
+    prompt = (
+        f"专业的产品UI界面设计图，{product_name} - {name}页面。"
+        f"页面描述：{desc}。"
+    )
+    if layout:
+        prompt += f"布局：{layout}。"
+    if elements:
+        prompt += f"包含以下UI元素：{elements}。"
+    prompt += "现代简洁风格，高保真原型图，白色背景，清晰的UI组件和排版。"
+    return prompt
+
+
+async def generate_page_images(
+    pages_plan: dict,
+    product_name: str = "",
+) -> dict[str, str]:
+    """Generate UI images for each page in the plan.
+
+    Returns a dict mapping page_id -> image_url.
+    """
+    pages = pages_plan.get("pages", [])
+    if not pages:
+        return {}
+
+    # Generate images concurrently (max 4 at a time)
+    semaphore = asyncio.Semaphore(4)
+    results = {}
+
+    async def gen_one(page):
+        page_id = page.get("id", "")
+        prompt = _build_image_prompt(page, product_name)
+        async with semaphore:
+            url = await generate_image(prompt)
+        if url:
+            results[page_id] = url
+
+    await asyncio.gather(*(gen_one(p) for p in pages))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Phase 3: PRD Generation (streaming)
 # ---------------------------------------------------------------------------
 
 async def generate_prd_stream(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
+    page_images: Optional[dict[str, str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD generation token by token."""
     llm = get_streaming_llm(temperature=0.5, max_tokens=16384)
@@ -111,6 +166,16 @@ async def generate_prd_stream(
     if pages_plan:
         req_str += "\n\n页面规划信息：\n" + json.dumps(pages_plan, ensure_ascii=False, indent=2)
 
+    # Append image URLs info so the LLM can embed them in the PRD
+    if page_images:
+        image_info = "\n\n已生成的页面原型图（请在原型设计章节使用 Markdown 图片语法引用）：\n"
+        pages = pages_plan.get("pages", []) if pages_plan else []
+        page_name_map = {p.get("id", ""): p.get("name", "") for p in pages}
+        for page_id, url in page_images.items():
+            page_name = page_name_map.get(page_id, page_id)
+            image_info += f'- {page_name}: ![{page_name}]({url})\n'
+        req_str += image_info
+
     async for chunk in chain.astream({
         "structured_requirement": req_str,
         "prd_template": prd_template,
@@ -123,10 +188,11 @@ async def generate_prd_stream(
 async def generate_prd(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
+    page_images: Optional[dict[str, str]] = None,
 ) -> str:
     """Generate complete PRD (non-streaming)."""
     tokens = []
-    async for event_str in generate_prd_stream(structured_requirement, pages_plan):
+    async for event_str in generate_prd_stream(structured_requirement, pages_plan, page_images):
         event = json.loads(event_str)
         if event["type"] == "token":
             tokens.append(event["data"])
@@ -183,10 +249,10 @@ async def revise_prd(
 async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None]:
     """Run the full PRD generation pipeline with streaming output.
 
-    Yields JSON-line events: status, requirement, token, prd_complete, done
+    Yields JSON-line events: status, requirement, images, token, prd_complete, done
     """
     # Phase 1: Requirement Analysis
-    yield json.dumps({"type": "status", "data": "阶段 1/3: 正在分析需求..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 1/4: 正在分析需求..."}) + "\n"
     structured = await analyze_requirement(requirement)
     yield json.dumps({
         "type": "requirement",
@@ -194,7 +260,7 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
     }) + "\n"
 
     # Phase 2: Page Planning
-    yield json.dumps({"type": "status", "data": "阶段 2/3: 正在规划页面结构..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 2/4: 正在规划页面结构..."}) + "\n"
     pages = None
     try:
         pages = await plan_pages(structured)
@@ -205,10 +271,31 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
     except Exception:
         yield json.dumps({"type": "status", "data": "页面规划跳过（非关键步骤）"}) + "\n"
 
+    # Phase 2.5: UI Image Generation
+    page_images = {}
+    if pages and settings.GLM_IMAGE_API_KEY:
+        yield json.dumps({"type": "status", "data": "阶段 3/4: 正在生成页面原型图..."}) + "\n"
+        product_name = structured.get("productName", "")
+        try:
+            page_images = await generate_page_images(pages, product_name)
+            if page_images:
+                yield json.dumps({
+                    "type": "images",
+                    "data": json.dumps(page_images, ensure_ascii=False),
+                }) + "\n"
+                yield json.dumps({
+                    "type": "status",
+                    "data": f"已生成 {len(page_images)} 张页面原型图",
+                }) + "\n"
+        except Exception:
+            yield json.dumps({"type": "status", "data": "原型图生成跳过（非关键步骤）"}) + "\n"
+    else:
+        yield json.dumps({"type": "status", "data": "阶段 3/4: 跳过原型图生成（未配置图片API）"}) + "\n"
+
     # Phase 3: PRD Generation (streamed)
-    yield json.dumps({"type": "status", "data": "阶段 3/3: 正在生成 PRD 文档..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 4/4: 正在生成 PRD 文档..."}) + "\n"
     prd_tokens = []
-    async for event_str in generate_prd_stream(structured, pages):
+    async for event_str in generate_prd_stream(structured, pages, page_images or None):
         yield event_str
         event = json.loads(event_str)
         if event["type"] == "token":
@@ -224,6 +311,7 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
         "data": json.dumps({
             "structured_requirement": structured,
             "pages_plan": pages,
+            "page_images": page_images,
             "prd_content": prd_content,
         }, ensure_ascii=False),
     }) + "\n"

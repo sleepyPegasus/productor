@@ -86,6 +86,9 @@ export function generatePRD(projectId, message, callbacks) {
                   case 'pages_plan':
                     callbacks.onPagesPlan?.(JSON.parse(event.data));
                     break;
+                  case 'images':
+                    callbacks.onImages?.(JSON.parse(event.data));
+                    break;
                   case 'prd_complete':
                     callbacks.onPrdComplete?.(event.data);
                     break;
@@ -117,6 +120,29 @@ export function generatePRD(projectId, message, callbacks) {
     });
 
   return () => controller.abort();
+}
+
+/**
+ * Export PRD as Word document (.docx).
+ * Triggers a file download in the browser.
+ * @param {string} projectId
+ * @param {string} projectName - used for the filename
+ */
+export async function exportPRDAsDocx(projectId, projectName = 'PRD') {
+  const res = await fetch(`${BASE}/projects/${projectId}/export/docx`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '导出失败' }));
+    throw new Error(err.detail || '导出失败');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${projectName}_PRD.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }
 
 /**
