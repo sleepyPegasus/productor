@@ -33,3 +33,19 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+*.whl
+venv/
+.venv/
+
+# Database
+*.db
+
+# Output
+output/
