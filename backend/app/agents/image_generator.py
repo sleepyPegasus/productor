@@ -13,17 +13,40 @@ logger = logging.getLogger(__name__)
 def _extract_image_url(data: dict) -> str | None:
     """Extract image URL from OpenRouter chat completions response.
 
-    OpenRouter returns generated images as base64-encoded data URLs
-    in the assistant message content (multimodal parts array).
+    OpenRouter may return generated images in two locations:
+    1. ``message.content`` – multimodal parts array or inline base64 string.
+    2. ``message.images`` – dedicated images array used by some providers
+       (e.g. Gemini models).
     """
     choices = data.get("choices", [])
     if not choices:
         logger.warning("Image response has no choices")
         return None
 
-    content = choices[0].get("message", {}).get("content")
+    message = choices[0].get("message", {})
+
+    # --- 1. Check dedicated ``images`` field (Gemini / newer providers) ---
+    images = message.get("images")
+    if images and isinstance(images, list):
+        for img in images:
+            if not isinstance(img, dict):
+                continue
+            if img.get("type") == "image_url":
+                url = img.get("image_url", {}).get("url", "")
+                if url:
+                    return url
+            # Also handle flat structure: {"url": "data:..."}
+            flat_url = img.get("url", "")
+            if flat_url:
+                return flat_url
+
+    # --- 2. Check ``content`` field (standard multimodal / DALL-E etc.) ---
+    content = message.get("content")
     if not content:
-        logger.warning("Image response has no content")
+        logger.warning(
+            "Image response has no content and no images; message keys=%s",
+            list(message.keys()),
+        )
         return None
 
     # Content can be a list of parts (multimodal) or a string
@@ -80,8 +103,17 @@ async def generate_image(prompt: str, model: str = None, size: str = "1024x1024"
             data = resp.json()
             image_url = _extract_image_url(data)
             if not image_url:
-                logger.warning("Image generation returned no image (model=%s): keys=%s",
-                               image_model, list(data.keys()))
+                # Log response structure for debugging
+                msg_keys = []
+                choices = data.get("choices", [])
+                if choices:
+                    msg = choices[0].get("message", {})
+                    msg_keys = list(msg.keys())
+                logger.warning(
+                    "Image generation returned no image (model=%s): "
+                    "top_keys=%s, message_keys=%s",
+                    image_model, list(data.keys()), msg_keys,
+                )
             return image_url
     except httpx.HTTPStatusError as e:
         logger.error(
