@@ -113,7 +113,12 @@ def _normalize_pages_plan(pages_plan) -> dict:
     return {"pages": []}
 
 
-def _build_image_prompt(page: dict, product_name: str = "") -> str:
+def _build_image_prompt(
+    page: dict,
+    product_name: str = "",
+    image_resolution: str = "",
+    image_ratio: str = "",
+) -> str:
     """Build an image generation prompt from a page plan entry."""
     name = page.get("name", "页面")
     desc = page.get("description", "")
@@ -128,6 +133,10 @@ def _build_image_prompt(page: dict, product_name: str = "") -> str:
         prompt += f"布局：{layout}。"
     if elements:
         prompt += f"包含以下UI元素：{elements}。"
+    if image_resolution:
+        prompt += f"目标分辨率：{image_resolution}。"
+    if image_ratio:
+        prompt += f"画面比例：{image_ratio}。"
     prompt += "现代简洁风格，高保真原型图，白色背景，清晰的UI组件和排版。"
     return prompt
 
@@ -449,6 +458,8 @@ async def run_single_page_design_stream(
     page: dict,
     product_name: str = "",
     image_model: str = None,
+    image_resolution: str = "",
+    image_ratio: str = "",
 ) -> AsyncGenerator[str, None]:
     """Generate a design image for a single page.
 
@@ -469,7 +480,10 @@ async def run_single_page_design_stream(
         "data": f"正在生成「{page_name}」的界面设计图...",
     }) + "\n"
 
-    prompt = _build_image_prompt(page, product_name)
+    prompt = _build_image_prompt(
+        page, product_name,
+        image_resolution=image_resolution, image_ratio=image_ratio,
+    )
     url = await generate_image(prompt, model=image_model)
 
     if url:

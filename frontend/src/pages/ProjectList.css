@@ -27,38 +27,7 @@
   margin-top: 4px;
 }
 
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.2s;
-}
-.btn-primary:hover {
-  background: var(--primary-hover);
-}
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: #fff;
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 10px 20px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-.btn-secondary:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-}
+/* btn-primary and btn-secondary now in global.css */
 
 .project-grid {
   display: grid;
@@ -208,32 +177,7 @@
   color: #94a3b8;
 }
 
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: #fff;
-  border-radius: 12px;
-  padding: 28px;
-  width: 440px;
-  max-width: 90vw;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-}
-
-.modal h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 20px;
-}
-
+/* Modal - base styles now in global.css */
 .modal label {
   display: block;
   font-size: 14px;
@@ -262,10 +206,6 @@
 .modal input:focus,
 .modal textarea:focus {
   border-color: var(--primary);
-}
-
-.modal-wide {
-  width: 520px;
 }
 
 /* Model selection */
@@ -323,9 +263,4 @@
   color: #b45309;
 }
 
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 24px;
-}
+/* modal-actions now in global.css */

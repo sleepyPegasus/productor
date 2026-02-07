@@ -34,6 +34,17 @@ export default function PRDWorkspace() {
   const [generatingPageId, setGeneratingPageId] = useState(null)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
 
+  // Edit & config modals
+  const [editingPage, setEditingPage] = useState(null)
+  const [editForm, setEditForm] = useState({ name: '', description: '', keyElements: '' })
+  const [imageConfigPage, setImageConfigPage] = useState(null)
+  const [pageImageConfigs, setPageImageConfigs] = useState({}) // pageId -> { resolution, ratio }
+
+  // Resizable split panel
+  const [splitWidth, setSplitWidth] = useState(360)
+  const isDraggingRef = useRef(false)
+  const splitContainerRef = useRef(null)
+
   const abortRef = useRef(null)
   const designAbortRef = useRef(null)
   const chatEndRef = useRef(null)
@@ -236,6 +247,8 @@ export default function PRDWorkspace() {
     setDesignError('')
     setGeneratingPageId(pageId)
 
+    const imageConfig = pageImageConfigs[pageId] || {}
+
     const abort = generateSinglePageDesign(id, pageId, {
       onImage(imageData) {
         setDesignImages((prev) => {
@@ -256,9 +269,9 @@ export default function PRDWorkspace() {
         setDesignStatus('')
         setDesignError(msg || '设计图生成失败，请重试')
       },
-    })
+    }, imageConfig)
     designAbortRef.current = abort
-  }, [id, generatingPageId])
+  }, [id, generatingPageId, pageImageConfigs])
 
   const handleStopDesign = () => {
     designAbortRef.current?.()
@@ -266,6 +279,96 @@ export default function PRDWorkspace() {
     setGeneratingPageId(null)
     setDesignStatus('')
   }
+
+  // Edit page content handlers
+  const handleOpenEditPage = (page, e) => {
+    e.stopPropagation()
+    setEditForm({
+      name: page.name || '',
+      description: page.description || '',
+      keyElements: (page.keyElements || []).join(', '),
+    })
+    setEditingPage(page)
+  }
+
+  const handleSaveEditPage = () => {
+    if (!editingPage) return
+    const updatedPages = pagesList.map((p) => {
+      if (p.id === editingPage.id) {
+        return {
+          ...p,
+          name: editForm.name,
+          description: editForm.description,
+          keyElements: editForm.keyElements
+            .split(/[,，]/)
+            .map((s) => s.trim())
+            .filter(Boolean),
+        }
+      }
+      return p
+    })
+    setPagesList(updatedPages)
+    setEditingPage(null)
+  }
+
+  // Image config handlers
+  const handleOpenImageConfig = (pageId, e) => {
+    e.stopPropagation()
+    setImageConfigPage(pageId)
+  }
+
+  const handleSaveImageConfig = (pageId, config) => {
+    setPageImageConfigs((prev) => ({ ...prev, [pageId]: config }))
+    setImageConfigPage(null)
+  }
+
+  // Resizable split panel handlers
+  const handleSplitMouseDown = useCallback((e) => {
+    e.preventDefault()
+    isDraggingRef.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const handleMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current || !splitContainerRef.current) return
+      const rect = splitContainerRef.current.getBoundingClientRect()
+      const newWidth = Math.max(260, Math.min(moveEvent.clientX - rect.left, rect.width - 300))
+      setSplitWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [])
+
+  // Image config presets
+  const RESOLUTION_OPTIONS = [
+    { label: '1920 x 1080 (Full HD)', value: '1920x1080' },
+    { label: '1440 x 900 (WXGA+)', value: '1440x900' },
+    { label: '1366 x 768 (HD)', value: '1366x768' },
+    { label: '1280 x 720 (HD 720p)', value: '1280x720' },
+    { label: '1024 x 768 (XGA)', value: '1024x768' },
+    { label: '768 x 1024 (iPad 竖屏)', value: '768x1024' },
+    { label: '390 x 844 (iPhone 14)', value: '390x844' },
+    { label: '375 x 812 (iPhone X)', value: '375x812' },
+    { label: '414 x 896 (iPhone 11)', value: '414x896' },
+  ]
+
+  const RATIO_OPTIONS = [
+    { label: '16:9 (宽屏)', value: '16:9' },
+    { label: '4:3 (标准)', value: '4:3' },
+    { label: '3:2 (经典)', value: '3:2' },
+    { label: '1:1 (正方形)', value: '1:1' },
+    { label: '9:16 (手机竖屏)', value: '9:16' },
+    { label: '3:4 (平板竖屏)', value: '3:4' },
+  ]
 
   // Get image for a specific page
   const getPageImage = (pageId) => {
@@ -554,9 +657,9 @@ export default function PRDWorkspace() {
 
           {/* Has pages - show split layout */}
           {(prdContent || pagesList.length > 0) && (
-            <div className="design-split-layout">
+            <div className="design-split-layout" ref={splitContainerRef}>
               {/* Left sidebar: Page list */}
-              <aside className="design-page-list">
+              <aside className="design-page-list" style={{ width: splitWidth, minWidth: 260 }}>
                 <div className="design-page-list-header">
                   <h3>页面列表</h3>
                   <span className="page-count">{pagesList.length} 个页面</span>
@@ -584,6 +687,7 @@ export default function PRDWorkspace() {
                     const image = getPageImage(page.id)
                     const isSelected = selectedPageId === page.id
                     const isGenerating = generatingPageId === page.id
+                    const pageConfig = pageImageConfigs[page.id]
                     return (
                       <div
                         key={page.id}
@@ -610,18 +714,42 @@ export default function PRDWorkspace() {
                             )}
                           </div>
                         )}
-                        <button
-                          className={`btn-generate-page ${isGenerating ? 'btn-generating' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (!isGenerating && !designGenerating) {
-                              handleGeneratePageDesign(page.id)
-                            }
-                          }}
-                          disabled={isGenerating || designGenerating}
-                        >
-                          {isGenerating ? '生成中...' : image ? '重新生成' : '生成设计图'}
-                        </button>
+                        {pageConfig && (
+                          <div className="design-page-config-tags">
+                            {pageConfig.resolution && (
+                              <span className="config-tag">{pageConfig.resolution}</span>
+                            )}
+                            {pageConfig.ratio && (
+                              <span className="config-tag">{pageConfig.ratio}</span>
+                            )}
+                          </div>
+                        )}
+                        <div className="design-page-btn-row">
+                          <button
+                            className="btn-page-action btn-edit-content"
+                            onClick={(e) => handleOpenEditPage(page, e)}
+                          >
+                            编辑内容
+                          </button>
+                          <button
+                            className="btn-page-action btn-image-config"
+                            onClick={(e) => handleOpenImageConfig(page.id, e)}
+                          >
+                            图片配置
+                          </button>
+                          <button
+                            className={`btn-page-action btn-generate-inline ${isGenerating ? 'btn-generating' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!isGenerating && !designGenerating) {
+                                handleGeneratePageDesign(page.id)
+                              }
+                            }}
+                            disabled={isGenerating || designGenerating}
+                          >
+                            {isGenerating ? '生成中...' : image ? '重新生成' : '生成设计图'}
+                          </button>
+                        </div>
                       </div>
                     )
                   })}
@@ -646,6 +774,14 @@ export default function PRDWorkspace() {
                   </div>
                 )}
               </aside>
+
+              {/* Resizable drag handle */}
+              <div
+                className="design-split-handle"
+                onMouseDown={handleSplitMouseDown}
+              >
+                <div className="split-handle-bar" />
+              </div>
 
               {/* Right panel: PPT-style preview */}
               <main className="design-preview-panel">
@@ -759,6 +895,112 @@ export default function PRDWorkspace() {
                   </div>
                 )}
               </main>
+            </div>
+          )}
+          {/* Edit Content Modal */}
+          {editingPage && (
+            <div className="modal-overlay" onClick={() => setEditingPage(null)}>
+              <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+                <h2>编辑页面内容</h2>
+                <div className="modal-form">
+                  <label className="form-label">
+                    页面名称
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                  </label>
+                  <label className="form-label">
+                    页面描述
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      value={editForm.description}
+                      onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                    />
+                  </label>
+                  <label className="form-label">
+                    关键元素（逗号分隔）
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editForm.keyElements}
+                      onChange={(e) => setEditForm((f) => ({ ...f, keyElements: e.target.value }))}
+                      placeholder="如：导航栏, 搜索框, 商品列表"
+                    />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-secondary" onClick={() => setEditingPage(null)}>
+                    取消
+                  </button>
+                  <button className="btn-primary" onClick={handleSaveEditPage}>
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Image Config Modal */}
+          {imageConfigPage && (
+            <div className="modal-overlay" onClick={() => setImageConfigPage(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h2>图片生成配置</h2>
+                <div className="modal-form">
+                  <label className="form-label">
+                    图片分辨率
+                    <select
+                      className="form-select"
+                      value={pageImageConfigs[imageConfigPage]?.resolution || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPageImageConfigs((prev) => ({
+                          ...prev,
+                          [imageConfigPage]: { ...prev[imageConfigPage], resolution: val },
+                        }))
+                      }}
+                    >
+                      <option value="">默认</option>
+                      {RESOLUTION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-label">
+                    图片比例
+                    <select
+                      className="form-select"
+                      value={pageImageConfigs[imageConfigPage]?.ratio || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPageImageConfigs((prev) => ({
+                          ...prev,
+                          [imageConfigPage]: { ...prev[imageConfigPage], ratio: val },
+                        }))
+                      }}
+                    >
+                      <option value="">默认</option>
+                      {RATIO_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-secondary" onClick={() => setImageConfigPage(null)}>
+                    取消
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleSaveImageConfig(imageConfigPage, pageImageConfigs[imageConfigPage] || {})}
+                  >
+                    确定
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
