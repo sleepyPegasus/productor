@@ -264,6 +264,65 @@
   border-color: var(--primary);
 }
 
+.modal-wide {
+  width: 520px;
+}
+
+/* Model selection */
+.model-select-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.model-select-label {
+  flex: 1;
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.model-select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: #fff;
+  appearance: auto;
+}
+.model-select:focus {
+  border-color: var(--primary);
+}
+
+/* Model tags on project cards */
+.card-models {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.model-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--primary-light);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.model-tag-image {
+  background: #fef3c7;
+  color: #b45309;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

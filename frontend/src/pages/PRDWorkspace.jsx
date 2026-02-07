@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { exportPRDAsDocx, generatePRD, generateDesigns, getChatHistory, getProject, revisePRD } from '../services/api'
+import { exportPRDAsDocx, generatePRD, generateDesigns, generateSinglePageDesign, getChatHistory, getProject, revisePRD } from '../services/api'
 import './PRDWorkspace.css'
 
 export default function PRDWorkspace() {
@@ -29,7 +29,10 @@ export default function PRDWorkspace() {
   const [designStatus, setDesignStatus] = useState('')
   const [designGenerating, setDesignGenerating] = useState(false)
   const [designError, setDesignError] = useState('')
-  const [selectedImage, setSelectedImage] = useState(null)
+  const [pagesList, setPagesList] = useState([])
+  const [selectedPageId, setSelectedPageId] = useState(null)
+  const [generatingPageId, setGeneratingPageId] = useState(null)
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
 
   const abortRef = useRef(null)
   const designAbortRef = useRef(null)
@@ -62,6 +65,17 @@ export default function PRDWorkspace() {
             if (Array.isArray(images)) setDesignImages(images)
           } catch {
             // ignore parse error
+          }
+        }
+        // Parse pages_plan for design tab
+        if (proj.pages_plan) {
+          try {
+            const plan = JSON.parse(proj.pages_plan)
+            if (plan.pages && Array.isArray(plan.pages)) {
+              setPagesList(plan.pages)
+            }
+          } catch {
+            // ignore
           }
         }
       } catch {
@@ -115,6 +129,10 @@ export default function PRDWorkspace() {
       },
       onPagesPlan(data) {
         setStatus('页面结构规划完成')
+        // Update pagesList when pages_plan is received
+        if (data && data.pages && Array.isArray(data.pages)) {
+          setPagesList(data.pages)
+        }
       },
       onPrdComplete(full) {
         setPrdContent(full)
@@ -133,7 +151,20 @@ export default function PRDWorkspace() {
             },
           ])
         }
-        getProject(id).then((p) => setProject(p)).catch(() => {})
+        getProject(id).then((p) => {
+          setProject(p)
+          // Refresh pages list
+          if (p.pages_plan) {
+            try {
+              const plan = JSON.parse(p.pages_plan)
+              if (plan.pages && Array.isArray(plan.pages)) {
+                setPagesList(plan.pages)
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }).catch(() => {})
       },
       onError(msg) {
         setStreaming(false)
@@ -170,12 +201,12 @@ export default function PRDWorkspace() {
     }
   }
 
-  // Design generation handler
-  const handleGenerateDesigns = useCallback(() => {
+  // Generate all designs handler
+  const handleGenerateAllDesigns = useCallback(() => {
     if (designGenerating) return
     setDesignError('')
     setDesignGenerating(true)
-    setDesignStatus('正在准备生成界面设计图...')
+    setDesignStatus('正在准备生成所有界面设计图...')
     setDesignImages([])
 
     const abort = generateDesigns(id, {
@@ -188,7 +219,6 @@ export default function PRDWorkspace() {
       onDone() {
         setDesignGenerating(false)
         setDesignStatus('')
-        // Reload project to get persisted data
         getProject(id).then((p) => setProject(p)).catch(() => {})
       },
       onError(msg) {
@@ -200,10 +230,61 @@ export default function PRDWorkspace() {
     designAbortRef.current = abort
   }, [id, designGenerating])
 
+  // Generate single page design
+  const handleGeneratePageDesign = useCallback((pageId) => {
+    if (generatingPageId) return
+    setDesignError('')
+    setGeneratingPageId(pageId)
+
+    const abort = generateSinglePageDesign(id, pageId, {
+      onImage(imageData) {
+        setDesignImages((prev) => {
+          const filtered = prev.filter((img) => img.page_id !== imageData.page_id)
+          return [...filtered, imageData]
+        })
+      },
+      onStatus(msg) {
+        setDesignStatus(msg)
+      },
+      onDone() {
+        setGeneratingPageId(null)
+        setDesignStatus('')
+        getProject(id).then((p) => setProject(p)).catch(() => {})
+      },
+      onError(msg) {
+        setGeneratingPageId(null)
+        setDesignStatus('')
+        setDesignError(msg || '设计图生成失败，请重试')
+      },
+    })
+    designAbortRef.current = abort
+  }, [id, generatingPageId])
+
   const handleStopDesign = () => {
     designAbortRef.current?.()
     setDesignGenerating(false)
+    setGeneratingPageId(null)
     setDesignStatus('')
+  }
+
+  // Get image for a specific page
+  const getPageImage = (pageId) => {
+    return designImages.find((img) => img.page_id === pageId)
+  }
+
+  // Get the selected page object
+  const getSelectedPage = () => {
+    if (!selectedPageId) return null
+    return pagesList.find((p) => p.id === selectedPageId)
+  }
+
+  // Navigate slides
+  const pagesWithImages = pagesList.filter((p) => getPageImage(p.id))
+  const handlePrevSlide = () => {
+    setCurrentSlideIndex((prev) => Math.max(0, prev - 1))
+  }
+  const handleNextSlide = () => {
+    setCurrentSlideIndex((prev) => Math.min(pagesWithImages.length - 1, prev + 1))
   }
 
   if (error && !project) {
@@ -257,7 +338,7 @@ export default function PRDWorkspace() {
             {status || '生成中...'}
           </div>
         )}
-        {activeTab === 'design' && designGenerating && (
+        {activeTab === 'design' && (designGenerating || generatingPageId) && (
           <div className="header-status">
             <span className="status-dot" />
             {designStatus || '生成中...'}
@@ -452,51 +533,14 @@ export default function PRDWorkspace() {
 
       {activeTab === 'design' && (
         <div className="design-tab-body">
-          {/* Design panel header */}
-          <div className="design-header">
-            <div className="design-header-left">
-              <h3>产品界面设计</h3>
-              <span className="design-hint">
-                基于 PRD 文档自动生成产品功能界面设计图
-              </span>
-            </div>
-            <div className="design-header-actions">
-              {designGenerating ? (
-                <button className="btn-stop" onClick={handleStopDesign}>
-                  停止生成
-                </button>
-              ) : (
-                <button
-                  className="btn-primary"
-                  onClick={handleGenerateDesigns}
-                  disabled={!prdContent}
-                  title={!prdContent ? '请先在步骤1中生成 PRD 文档' : ''}
-                >
-                  {designImages.length > 0 ? '重新生成设计图' : '生成界面设计图'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Design content */}
-          <div className="design-content">
-            {designError && (
-              <div className="design-error">{designError}</div>
-            )}
-
-            {designGenerating && designStatus && (
-              <div className="design-progress">
-                <span className="status-dot" />
-                <span>{designStatus}</span>
-              </div>
-            )}
-
-            {!prdContent && !designGenerating && designImages.length === 0 && (
+          {/* No PRD - show empty state */}
+          {!prdContent && pagesList.length === 0 && (
+            <div className="design-content">
               <div className="design-empty">
                 <div className="design-empty-icon">🎨</div>
                 <p>请先在「PRD 文档」步骤中生成 PRD 文档</p>
                 <p className="design-empty-hint">
-                  生成 PRD 后，即可在此处生成产品界面设计图
+                  生成 PRD 后，即可在此处查看页面结构并生成产品界面设计图
                 </p>
                 <button
                   className="btn-secondary"
@@ -505,62 +549,216 @@ export default function PRDWorkspace() {
                   前往生成 PRD
                 </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {prdContent && !designGenerating && designImages.length === 0 && (
-              <div className="design-empty">
-                <div className="design-empty-icon">🖼️</div>
-                <p>PRD 文档已就绪</p>
-                <p className="design-empty-hint">
-                  点击上方「生成界面设计图」按钮，AI 将根据 PRD 文档自动生成各页面的界面设计
-                </p>
-              </div>
-            )}
+          {/* Has pages - show split layout */}
+          {(prdContent || pagesList.length > 0) && (
+            <div className="design-split-layout">
+              {/* Left sidebar: Page list */}
+              <aside className="design-page-list">
+                <div className="design-page-list-header">
+                  <h3>页面列表</h3>
+                  <span className="page-count">{pagesList.length} 个页面</span>
+                </div>
 
-            {designImages.length > 0 && (
-              <div className="design-gallery">
-                {designImages.map((img, idx) => (
-                  <div
-                    key={img.page_id || idx}
-                    className="design-card"
-                    onClick={() => setSelectedImage(img)}
-                  >
-                    <div className="design-card-image">
-                      <img
-                        src={img.image_url}
-                        alt={img.page_name || `页面 ${idx + 1}`}
-                        loading="lazy"
-                      />
+                {designError && (
+                  <div className="design-error-inline">{designError}</div>
+                )}
+
+                {(designGenerating || generatingPageId) && designStatus && (
+                  <div className="design-progress-inline">
+                    <span className="status-dot" />
+                    <span>{designStatus}</span>
+                  </div>
+                )}
+
+                <div className="design-page-items">
+                  {pagesList.length === 0 && (
+                    <div className="design-page-empty">
+                      <p>页面结构暂未生成</p>
+                      <p>请先在 PRD 文档中完成需求描述</p>
                     </div>
-                    <div className="design-card-info">
-                      <h4>{img.page_name || `页面 ${idx + 1}`}</h4>
+                  )}
+                  {pagesList.map((page, idx) => {
+                    const image = getPageImage(page.id)
+                    const isSelected = selectedPageId === page.id
+                    const isGenerating = generatingPageId === page.id
+                    return (
+                      <div
+                        key={page.id}
+                        className={`design-page-item ${isSelected ? 'design-page-item-active' : ''}`}
+                        onClick={() => setSelectedPageId(page.id)}
+                      >
+                        <div className="design-page-item-header">
+                          <span className="design-page-number">{idx + 1}</span>
+                          <h4 className="design-page-name">{page.name}</h4>
+                          {image && <span className="design-page-done-badge">已生成</span>}
+                        </div>
+                        <p className="design-page-desc">
+                          {page.description || '暂无描述'}
+                        </p>
+                        {page.keyElements && page.keyElements.length > 0 && (
+                          <div className="design-page-elements">
+                            {page.keyElements.slice(0, 4).map((el, i) => (
+                              <span key={i} className="design-element-tag">{el}</span>
+                            ))}
+                            {page.keyElements.length > 4 && (
+                              <span className="design-element-tag design-element-more">
+                                +{page.keyElements.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <button
+                          className={`btn-generate-page ${isGenerating ? 'btn-generating' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (!isGenerating && !designGenerating) {
+                              handleGeneratePageDesign(page.id)
+                            }
+                          }}
+                          disabled={isGenerating || designGenerating}
+                        >
+                          {isGenerating ? '生成中...' : image ? '重新生成' : '生成设计图'}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Generate all button at bottom */}
+                {pagesList.length > 0 && (
+                  <div className="design-page-list-footer">
+                    {designGenerating ? (
+                      <button className="btn-stop btn-full" onClick={handleStopDesign}>
+                        停止生成
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-primary btn-full"
+                        onClick={handleGenerateAllDesigns}
+                        disabled={generatingPageId !== null}
+                      >
+                        {designImages.length > 0 ? '重新生成所有设计图' : '一键生成所有设计图'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </aside>
+
+              {/* Right panel: PPT-style preview */}
+              <main className="design-preview-panel">
+                {/* No page selected or no images yet */}
+                {!selectedPageId && pagesWithImages.length === 0 && (
+                  <div className="design-preview-empty">
+                    <div className="design-empty-icon">🖼️</div>
+                    <p>选择左侧页面并点击「生成设计图」</p>
+                    <p className="design-empty-hint">
+                      生成的设计图将在此处以 PPT 风格展示
+                    </p>
+                  </div>
+                )}
+
+                {/* PPT Slideshow when images exist */}
+                {pagesWithImages.length > 0 && !selectedPageId && (
+                  <div className="design-slideshow">
+                    <div className="slide-container">
+                      <div className="slide-image-wrapper">
+                        <img
+                          src={getPageImage(pagesWithImages[currentSlideIndex]?.id)?.image_url}
+                          alt={pagesWithImages[currentSlideIndex]?.name}
+                        />
+                      </div>
+                      <div className="slide-info">
+                        <h3>{pagesWithImages[currentSlideIndex]?.name}</h3>
+                        <p>{pagesWithImages[currentSlideIndex]?.description}</p>
+                      </div>
+                    </div>
+                    <div className="slide-controls">
+                      <button
+                        className="slide-nav-btn"
+                        onClick={handlePrevSlide}
+                        disabled={currentSlideIndex === 0}
+                      >
+                        &#8592; 上一页
+                      </button>
+                      <span className="slide-counter">
+                        {currentSlideIndex + 1} / {pagesWithImages.length}
+                      </span>
+                      <button
+                        className="slide-nav-btn"
+                        onClick={handleNextSlide}
+                        disabled={currentSlideIndex === pagesWithImages.length - 1}
+                      >
+                        下一页 &#8594;
+                      </button>
+                    </div>
+                    {/* Thumbnail strip */}
+                    <div className="slide-thumbnails">
+                      {pagesWithImages.map((page, idx) => {
+                        const img = getPageImage(page.id)
+                        return (
+                          <div
+                            key={page.id}
+                            className={`slide-thumbnail ${idx === currentSlideIndex ? 'slide-thumbnail-active' : ''}`}
+                            onClick={() => setCurrentSlideIndex(idx)}
+                          >
+                            <img src={img?.image_url} alt={page.name} />
+                            <span className="slide-thumbnail-label">{page.name}</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                )}
 
-          {/* Image preview modal */}
-          {selectedImage && (
-            <div className="image-modal-overlay" onClick={() => setSelectedImage(null)}>
-              <div className="image-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="image-modal-header">
-                  <h3>{selectedImage.page_name}</h3>
-                  <button
-                    className="image-modal-close"
-                    onClick={() => setSelectedImage(null)}
-                  >
-                    &times;
-                  </button>
-                </div>
-                <div className="image-modal-body">
-                  <img
-                    src={selectedImage.image_url}
-                    alt={selectedImage.page_name}
-                  />
-                </div>
-              </div>
+                {/* Selected page detail view */}
+                {selectedPageId && (
+                  <div className="design-page-detail">
+                    <div className="design-page-detail-header">
+                      <button
+                        className="btn-back-small"
+                        onClick={() => setSelectedPageId(null)}
+                      >
+                        &#8592; 返回总览
+                      </button>
+                      <h3>{getSelectedPage()?.name}</h3>
+                    </div>
+                    {getPageImage(selectedPageId) ? (
+                      <div className="design-page-detail-image">
+                        <div className="slide-image-wrapper">
+                          <img
+                            src={getPageImage(selectedPageId)?.image_url}
+                            alt={getSelectedPage()?.name}
+                          />
+                        </div>
+                        <div className="slide-info">
+                          <p>{getSelectedPage()?.description}</p>
+                          {getSelectedPage()?.layoutDescription && (
+                            <p className="layout-desc">
+                              <strong>布局：</strong>{getSelectedPage()?.layoutDescription}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="design-preview-empty">
+                        <div className="design-empty-icon">🖼️</div>
+                        <p>该页面尚未生成设计图</p>
+                        <p className="design-empty-hint">{getSelectedPage()?.description}</p>
+                        <button
+                          className="btn-primary"
+                          onClick={() => handleGeneratePageDesign(selectedPageId)}
+                          disabled={generatingPageId !== null || designGenerating}
+                        >
+                          {generatingPageId === selectedPageId ? '生成中...' : '生成设计图'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </main>
             </div>
           )}
         </div>

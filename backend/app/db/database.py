@@ -30,6 +30,8 @@ def init_db():
             description TEXT DEFAULT '',
             status TEXT DEFAULT 'created',
             version INTEGER DEFAULT 0,
+            chat_model TEXT DEFAULT '',
+            image_model TEXT DEFAULT '',
             raw_requirement TEXT DEFAULT '',
             structured_requirement TEXT DEFAULT '',
             pages_plan TEXT DEFAULT '',
@@ -41,12 +43,17 @@ def init_db():
             updated_at TEXT NOT NULL
         );
     """)
-    # Migrate: add design_images column if missing
-    try:
-        conn.execute("SELECT design_images FROM projects LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE projects ADD COLUMN design_images TEXT DEFAULT '[]'")
-        conn.commit()
+    # Migrate: add columns if missing
+    for col, default in [
+        ("design_images", "'[]'"),
+        ("chat_model", "''"),
+        ("image_model", "''"),
+    ]:
+        try:
+            conn.execute(f"SELECT {col} FROM projects LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT DEFAULT {default}")
+            conn.commit()
     conn.close()
 
 
@@ -54,16 +61,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_project(name: str, description: str = "") -> dict:
+def create_project(name: str, description: str = "", chat_model: str = "", image_model: str = "") -> dict:
     project_id = uuid.uuid4().hex[:8]
     now = _now()
     conn = get_connection()
     conn.execute(
         """INSERT INTO projects (id, name, description, status, version,
+           chat_model, image_model,
            raw_requirement, structured_requirement, pages_plan, prd_content,
-           history, chat_history, created_at, updated_at)
-           VALUES (?, ?, ?, 'created', 0, '', '', '', '', '[]', '[]', ?, ?)""",
-        (project_id, name, description, now, now),
+           design_images, history, chat_history, created_at, updated_at)
+           VALUES (?, ?, ?, 'created', 0, ?, ?, '', '', '', '', '[]', '[]', '[]', ?, ?)""",
+        (project_id, name, description, chat_model, image_model, now, now),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -74,7 +82,8 @@ def create_project(name: str, description: str = "") -> dict:
 def list_projects() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, name, description, status, version, prd_content, design_images, created_at, updated_at "
+        "SELECT id, name, description, status, version, chat_model, image_model, "
+        "prd_content, design_images, created_at, updated_at "
         "FROM projects ORDER BY updated_at DESC"
     ).fetchall()
     conn.close()

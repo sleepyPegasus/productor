@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchProjects, createProject, deleteProject, exportPRDAsDocx } from '../services/api'
+import { fetchProjects, createProject, deleteProject, exportPRDAsDocx, fetchModels } from '../services/api'
 import './ProjectList.css'
 
 const STATUS_LABELS = {
@@ -28,6 +28,10 @@ export default function ProjectList() {
   const [showModal, setShowModal] = useState(false)
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
+  const [chatModel, setChatModel] = useState('')
+  const [imageModel, setImageModel] = useState('')
+  const [chatModels, setChatModels] = useState([])
+  const [imageModels, setImageModels] = useState([])
   const [loading, setLoading] = useState(false)
   const [exportingId, setExportingId] = useState(null)
   const navigate = useNavigate()
@@ -41,15 +45,32 @@ export default function ProjectList() {
     }
   }
 
+  const loadModels = async () => {
+    try {
+      const data = await fetchModels()
+      setChatModels(data.chat_models || [])
+      setImageModels(data.image_models || [])
+      if (data.chat_models?.length > 0 && !chatModel) {
+        setChatModel(data.chat_models[0].id)
+      }
+      if (data.image_models?.length > 0 && !imageModel) {
+        setImageModel(data.image_models[0].id)
+      }
+    } catch {
+      // silent
+    }
+  }
+
   useEffect(() => {
     load()
+    loadModels()
   }, [])
 
   const handleCreate = async () => {
     if (!name.trim()) return
     setLoading(true)
     try {
-      const project = await createProject(name.trim(), desc.trim())
+      const project = await createProject(name.trim(), desc.trim(), chatModel, imageModel)
       setShowModal(false)
       setName('')
       setDesc('')
@@ -119,6 +140,11 @@ export default function ProjectList() {
     })
   }
 
+  const getModelName = (modelId, models) => {
+    const m = models.find((x) => x.id === modelId)
+    return m ? m.name : modelId
+  }
+
   return (
     <div className="project-list-page">
       <header className="page-header">
@@ -155,6 +181,22 @@ export default function ProjectList() {
               </span>
             </div>
             {p.description && <p className="card-desc">{p.description}</p>}
+
+            {/* Model info */}
+            {(p.chat_model || p.image_model) && (
+              <div className="card-models">
+                {p.chat_model && (
+                  <span className="model-tag" title="对话模型">
+                    {getModelName(p.chat_model, chatModels) || p.chat_model}
+                  </span>
+                )}
+                {p.image_model && (
+                  <span className="model-tag model-tag-image" title="文生图模型">
+                    {getModelName(p.image_model, imageModels) || p.image_model}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Action buttons */}
             <div className="card-actions">
@@ -205,7 +247,7 @@ export default function ProjectList() {
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
             <h2>新建产品项目</h2>
             <label>
               项目名称 <span className="required">*</span>
@@ -226,6 +268,36 @@ export default function ProjectList() {
                 rows={3}
               />
             </label>
+            <div className="model-select-row">
+              <label className="model-select-label">
+                对话模型
+                <select
+                  value={chatModel}
+                  onChange={(e) => setChatModel(e.target.value)}
+                  className="model-select"
+                >
+                  {chatModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="model-select-label">
+                文生图模型
+                <select
+                  value={imageModel}
+                  onChange={(e) => setImageModel(e.target.value)}
+                  className="model-select"
+                >
+                  {imageModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowModal(false)}>
                 取消

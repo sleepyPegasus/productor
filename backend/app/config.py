@@ -5,17 +5,28 @@ load_dotenv()
 
 
 class Settings:
-    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
-    DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-    GLM_IMAGE_API_KEY: str = os.getenv("GLM_IMAGE_API_KEY", "")
-    GLM_IMAGE_BASE_URL: str = os.getenv(
-        "GLM_IMAGE_BASE_URL",
-        "https://open.bigmodel.cn/api/paas/v4/images/generations",
-    )
-    GLM_IMAGE_MODEL: str = os.getenv("GLM_IMAGE_MODEL", "cogview-3")
+    # OpenRouter unified API
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    DEFAULT_CHAT_MODEL: str = os.getenv("DEFAULT_CHAT_MODEL", "deepseek/deepseek-chat")
+    DEFAULT_IMAGE_MODEL: str = os.getenv("DEFAULT_IMAGE_MODEL", "openai/dall-e-3")
+
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./productor.db")
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
+
+    # Available models for selection
+    CHAT_MODELS: list = [
+        {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat"},
+        {"id": "openai/gpt-4o", "name": "GPT-4o"},
+        {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini"},
+        {"id": "anthropic/claude-sonnet-4", "name": "Claude Sonnet 4"},
+        {"id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash"},
+        {"id": "meta-llama/llama-3.1-70b-instruct", "name": "Llama 3.1 70B"},
+    ]
+    IMAGE_MODELS: list = [
+        {"id": "openai/dall-e-3", "name": "DALL-E 3"},
+        {"id": "stabilityai/stable-diffusion-xl", "name": "Stable Diffusion XL"},
+    ]
 
 
 settings = Settings()

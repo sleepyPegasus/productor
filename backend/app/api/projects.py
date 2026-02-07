@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import settings
 from app.db.database import (
     create_project,
     delete_project,
@@ -12,6 +13,7 @@ from app.db.database import (
 )
 from app.models.schemas import (
     ChatMessage,
+    ModelsResponse,
     ProjectCreate,
     ProjectListItem,
     ProjectResponse,
@@ -28,7 +30,12 @@ async def api_list_projects():
 
 @router.post("", response_model=ProjectResponse)
 async def api_create_project(body: ProjectCreate):
-    project = create_project(body.name, body.description)
+    project = create_project(
+        body.name,
+        body.description,
+        chat_model=body.chat_model,
+        image_model=body.image_model,
+    )
     return project
 
 
