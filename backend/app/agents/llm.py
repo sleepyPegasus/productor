@@ -35,4 +35,5 @@ def get_streaming_llm(model: str = None, temperature: float = 0.7, max_tokens: i
         temperature=temperature,
         max_tokens=max_tokens,
         streaming=True,
+        max_retries=3,
     )

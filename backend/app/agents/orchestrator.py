@@ -684,32 +684,56 @@ async def consolidate_comprehensive_stream(
     else:
         human_content = user_text
 
-    try:
-        llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
-        messages = [
-            SystemMessage(content=COMPREHENSIVE_SYSTEM_PROMPT),
-            HumanMessage(content=human_content),
-        ]
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        try:
+            llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
+            messages = [
+                SystemMessage(content=COMPREHENSIVE_SYSTEM_PROMPT),
+                HumanMessage(content=human_content),
+            ]
 
-        tokens = []
-        async for chunk in llm.astream(messages):
-            token = chunk.content
-            if token:
-                tokens.append(token)
-                yield json.dumps({"type": "token", "data": token}) + "\n"
+            tokens = []
+            async for chunk in llm.astream(messages):
+                token = chunk.content
+                if token:
+                    tokens.append(token)
+                    yield json.dumps({"type": "token", "data": token}) + "\n"
 
-        full_content = "".join(tokens)
+            full_content = "".join(tokens)
 
-        # Post-process: replace {{IMAGE:page_id}} with actual image markdown
-        if design_images:
-            full_content = _embed_design_images(full_content, design_images)
+            # Post-process: replace {{IMAGE:page_id}} with actual image markdown
+            if design_images:
+                full_content = _embed_design_images(full_content, design_images)
 
-        yield json.dumps({"type": "comprehensive_complete", "data": full_content}) + "\n"
-        yield json.dumps({"type": "done", "data": "综合产品方案整合完成"}) + "\n"
+            yield json.dumps({"type": "comprehensive_complete", "data": full_content}) + "\n"
+            yield json.dumps({"type": "done", "data": "综合产品方案整合完成"}) + "\n"
+            return  # Success
 
-    except Exception as e:
-        logger.exception("Comprehensive consolidation failed")
-        yield json.dumps({
-            "type": "error",
-            "data": f"AI 内容整合失败: {str(e)}",
-        }) + "\n"
+        except Exception as e:
+            is_retryable = (
+                "network" in str(e).lower()
+                or "connection" in str(e).lower()
+                or "timeout" in str(e).lower()
+            )
+
+            if is_retryable and attempt < max_retries:
+                wait_time = 2 ** (attempt + 1)  # 2s, 4s
+                logger.warning(
+                    "Comprehensive consolidation attempt %d/%d failed (%s), retrying in %ds...",
+                    attempt + 1, max_retries + 1, str(e), wait_time,
+                )
+                yield json.dumps({
+                    "type": "status",
+                    "data": f"网络连接中断，{wait_time}秒后重试（第{attempt + 1}次）...",
+                }) + "\n"
+                yield json.dumps({"type": "comprehensive_reset"}) + "\n"
+                await asyncio.sleep(wait_time)
+                continue
+
+            logger.exception("Comprehensive consolidation failed")
+            yield json.dumps({
+                "type": "error",
+                "data": f"AI 内容整合失败: {str(e)}",
+            }) + "\n"
+            return

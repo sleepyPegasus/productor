@@ -549,6 +549,10 @@ export default function PRDWorkspace() {
         setComprehensiveContent(tokenBuf)
       },
       onStatus(msg) { setComprehensiveStatus(msg) },
+      onComprehensiveReset() {
+        tokenBuf = ''
+        setComprehensiveContent('')
+      },
       onComprehensiveComplete(full) {
         setComprehensiveContent(full)
         tokenBuf = full
