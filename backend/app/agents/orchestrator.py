@@ -10,6 +10,7 @@ Coordinates the multi-phase pipeline:
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncGenerator
 from typing import Optional
@@ -20,6 +21,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.agents.image_generator import generate_image
 from app.agents.llm import get_chat_llm, get_streaming_llm
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
 
@@ -95,6 +98,21 @@ async def plan_pages(structured_requirement: dict, chat_model: str = None) -> di
 # Phase 2.5: UI Image Generation
 # ---------------------------------------------------------------------------
 
+def _normalize_pages_plan(pages_plan) -> dict:
+    """Normalize pages_plan to always be a dict with a 'pages' list."""
+    if isinstance(pages_plan, list):
+        return {"pages": pages_plan}
+    if isinstance(pages_plan, dict):
+        if "pages" not in pages_plan:
+            # The dict itself might be a single page or have a different structure
+            # Try to find any list value that looks like pages
+            for v in pages_plan.values():
+                if isinstance(v, list) and v and isinstance(v[0], dict):
+                    return {"pages": v}
+        return pages_plan
+    return {"pages": []}
+
+
 def _build_image_prompt(page: dict, product_name: str = "") -> str:
     """Build an image generation prompt from a page plan entry."""
     name = page.get("name", "页面")
@@ -123,7 +141,8 @@ async def generate_page_images(
 
     Returns a dict mapping page_id -> image_url.
     """
-    pages = pages_plan.get("pages", [])
+    normalized = _normalize_pages_plan(pages_plan)
+    pages = normalized.get("pages", [])
     if not pages:
         return {}
 
@@ -342,12 +361,17 @@ async def run_design_generation_stream(
     """
     product_name = structured_requirement.get("productName", "")
 
-    # Step 1: Ensure pages_plan exists
+    # Step 1: Ensure pages_plan exists and is properly formatted
+    if pages_plan:
+        pages_plan = _normalize_pages_plan(pages_plan)
+
     if not pages_plan or not pages_plan.get("pages"):
         yield json.dumps({"type": "status", "data": "正在分析页面结构..."}) + "\n"
         try:
-            pages_plan = await plan_pages(structured_requirement, chat_model=chat_model)
+            raw_plan = await plan_pages(structured_requirement, chat_model=chat_model)
+            pages_plan = _normalize_pages_plan(raw_plan)
         except Exception as e:
+            logger.error("Page planning failed: %s", e)
             yield json.dumps({"type": "error", "data": f"页面结构分析失败: {str(e)}"}) + "\n"
             return
 
@@ -372,20 +396,27 @@ async def run_design_generation_stream(
 
     semaphore = asyncio.Semaphore(4)
     results = {}
+    errors = []
 
     async def gen_one(page, idx):
         page_id = page.get("id", f"page_{idx}")
         page_name = page.get("name", f"页面{idx + 1}")
         prompt = _build_image_prompt(page, product_name)
-        async with semaphore:
-            url = await generate_image(prompt, model=image_model)
-        if url:
-            results[page_id] = {
-                "page_id": page_id,
-                "page_name": page_name,
-                "image_url": url,
-                "prompt": prompt,
-            }
+        try:
+            async with semaphore:
+                url = await generate_image(prompt, model=image_model)
+            if url:
+                results[page_id] = {
+                    "page_id": page_id,
+                    "page_name": page_name,
+                    "image_url": url,
+                    "prompt": prompt,
+                }
+            else:
+                errors.append(page_name)
+        except Exception as e:
+            logger.error("Failed to generate image for page '%s': %s", page_name, e)
+            errors.append(page_name)
 
     await asyncio.gather(*(gen_one(p, i) for i, p in enumerate(pages)))
 
@@ -399,6 +430,14 @@ async def run_design_generation_stream(
             }) + "\n"
 
     generated_count = len(results)
+
+    if generated_count == 0:
+        yield json.dumps({
+            "type": "error",
+            "data": "界面设计图生成失败，请检查图片模型配置和 API Key 是否正确",
+        }) + "\n"
+        return
+
     yield json.dumps({
         "type": "status",
         "data": f"界面设计图生成完成，共 {generated_count}/{total} 张",
