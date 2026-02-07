@@ -52,6 +52,8 @@ def init_db():
         ("image_model", "''"),
         ("prd_versions", "'[]'"),
         ("design_versions", "'[]'"),
+        ("comprehensive_content", "''"),
+        ("comprehensive_versions", "'[]'"),
     ]:
         try:
             conn.execute(f"SELECT {col} FROM projects LIMIT 1")
@@ -239,3 +241,58 @@ def get_design_version_images(project_id: str, version: int) -> Optional[list]:
         if v["version"] == version:
             return v.get("images", [])
     return None
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive Solution Versioning
+# ---------------------------------------------------------------------------
+
+def save_comprehensive_version(project_id: str, content: str, action: str = "ai_generated") -> Optional[int]:
+    """Save comprehensive solution content as a version snapshot."""
+    project = get_project(project_id)
+    if not project:
+        return None
+    comp_versions = json.loads(project.get("comprehensive_versions") or "[]")
+    version_num = len(comp_versions) + 1
+    comp_versions.append({
+        "version": version_num,
+        "content": content,
+        "action": action,
+        "timestamp": _now(),
+    })
+    update_project(
+        project_id,
+        comprehensive_content=content,
+        comprehensive_versions=json.dumps(comp_versions, ensure_ascii=False),
+    )
+    return version_num
+
+
+def get_comprehensive_versions(project_id: str) -> list[dict]:
+    """Get all comprehensive version snapshots (metadata only)."""
+    project = get_project(project_id)
+    if not project:
+        return []
+    comp_versions = json.loads(project.get("comprehensive_versions") or "[]")
+    return [{
+        "version": v["version"],
+        "action": v.get("action", ""),
+        "timestamp": v["timestamp"],
+    } for v in comp_versions]
+
+
+def get_comprehensive_version_content(project_id: str, version: int) -> Optional[str]:
+    """Get comprehensive solution content for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        return None
+    comp_versions = json.loads(project.get("comprehensive_versions") or "[]")
+    for v in comp_versions:
+        if v["version"] == version:
+            return v["content"]
+    return None
+
+
+def update_comprehensive_content(project_id: str, content: str) -> Optional[dict]:
+    """Update the current comprehensive content."""
+    return update_project(project_id, comprehensive_content=content)

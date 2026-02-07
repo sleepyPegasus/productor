@@ -46,6 +46,7 @@ class ProjectResponse(BaseModel):
     structured_requirement: Optional[str] = None
     pages_plan: Optional[str] = None
     design_images: Optional[str] = None
+    comprehensive_content: Optional[str] = None
     history: Optional[str] = None
     created_at: str
     updated_at: str
