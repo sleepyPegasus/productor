@@ -28,6 +28,7 @@ _MULTIMODAL_PATTERNS = [
     "gemini-2", "gemini-3", "gemini-pro",
     "qwen-vl", "qwen2-vl",
     "llava", "internvl",
+    "kimi",
 ]
 
 

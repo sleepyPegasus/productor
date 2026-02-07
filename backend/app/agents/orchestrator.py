@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import AsyncGenerator
 from typing import Optional
 
@@ -518,7 +519,7 @@ async def run_revision_pipeline_stream(
 # Phase 5: Comprehensive Solution AI Integration
 # ---------------------------------------------------------------------------
 
-COMPREHENSIVE_SYSTEM_PROMPT = """你是一位资深产品经理和文档专家。你的任务是将 PRD 文档和产品界面设计信息整合成一份结构清晰、内容完整的综合产品方案。
+COMPREHENSIVE_SYSTEM_PROMPT = """你是一位资深产品经理和文档专家。你的任务是将 PRD 文档和产品界面设计信息整合成一份结构清晰、内容完整、图文并茂的综合产品方案。
 
 整合要求：
 1. 保留 PRD 的核心内容，但重新组织结构使其更适合作为产品方案呈现
@@ -526,6 +527,7 @@ COMPREHENSIVE_SYSTEM_PROMPT = """你是一位资深产品经理和文档专家�
 3. 对内容进行提炼和润色，使表述更加专业和简洁
 4. 确保方案具有完整的逻辑脉络：背景→目标→方案→实现
 5. 输出 Markdown 格式
+6. **重要：在每个页面/功能模块的描述后，必须使用 `{{{{IMAGE:页面ID}}}}` 标记来插入对应的界面设计图。** 系统会自动将标记替换为实际的设计图。请确保每个有设计图的页面都包含对应的标记。
 """
 
 COMPREHENSIVE_USER_TEMPLATE = """请将以下 PRD 文档和产品界面设计信息整合为一份综合产品方案。
@@ -541,12 +543,64 @@ COMPREHENSIVE_USER_TEMPLATE = """请将以下 PRD 文档和产品界面设计信
 请输出整合后的综合产品方案（Markdown 格式）。方案应当包含但不限于：
 - 产品概述与背景
 - 核心目标与价值
-- 功能模块详述（结合界面设计说明）
+- 功能模块详述（结合界面设计说明和设计图）
 - 信息架构与页面流转
 - 技术方案概要
 - 实施路线图与优先级
 
+**图片插入规则：** 在每个功能模块或页面描述的末尾，使用 `{{{{IMAGE:页面ID}}}}` 标记插入该页面的界面设计图。例如：如果页面ID为 `page_1`，则写 `{{{{IMAGE:page_1}}}}`。请确保所有提供的页面设计图都被引用。
+
 注意：直接输出方案内容，不要包含额外的解释说明。"""
+
+
+def _embed_design_images(content: str, design_images: list) -> str:
+    """Replace ``{{IMAGE:page_id}}`` placeholders with actual image markdown.
+
+    Any design images not referenced via placeholders are appended at the end
+    so that no image is lost.
+    """
+    image_map = {img["page_id"]: img for img in design_images if img.get("image_url")}
+    used_ids: set[str] = set()
+
+    def _replacer(match: re.Match) -> str:
+        page_id = match.group(1).strip()
+        if page_id in image_map:
+            used_ids.add(page_id)
+            img = image_map[page_id]
+            page_name = img.get("page_name", "界面设计图")
+            return f'\n\n![{page_name} 界面设计图]({img["image_url"]})\n'
+        return match.group(0)
+
+    content = re.sub(r'\{\{IMAGE:([^}]+)\}\}', _replacer, content)
+
+    # Append any unreferenced images at the end
+    unreferenced = [img for pid, img in image_map.items() if pid not in used_ids]
+    if unreferenced:
+        content += "\n\n---\n\n## 界面设计图\n"
+        for img in unreferenced:
+            page_name = img.get("page_name", "界面设计图")
+            content += f'\n### {page_name}\n\n![{page_name} 界面设计图]({img["image_url"]})\n'
+
+    return content
+
+
+# Known multimodal model patterns (used to decide whether to send image content parts)
+_COMPREHENSIVE_MULTIMODAL_PATTERNS = [
+    "gpt-4o", "gpt-4-turbo", "gpt-4-vision",
+    "claude-sonnet", "claude-opus", "claude-haiku",
+    "gemini-2", "gemini-3", "gemini-pro",
+    "qwen-vl", "qwen2-vl",
+    "llava", "internvl",
+    "kimi",
+]
+
+
+def _is_model_multimodal(model_id: str) -> bool:
+    """Heuristic check whether a model supports image input."""
+    if not model_id:
+        return False
+    model_lower = model_id.lower()
+    return any(p in model_lower for p in _COMPREHENSIVE_MULTIMODAL_PATTERNS)
 
 
 async def consolidate_comprehensive_stream(
@@ -557,7 +611,12 @@ async def consolidate_comprehensive_stream(
 ) -> AsyncGenerator[str, None]:
     """Use LLM to consolidate PRD and design info into an integrated solution.
 
-    Yields JSON-line events: status, token, comprehensive_complete, done, error
+    Yields JSON-line events: status, token, comprehensive_complete, done, error.
+
+    For multimodal models (e.g. kimi-k2.5, gpt-4o), design images are sent as
+    image content parts so the model can *see* the designs.  All models receive
+    ``{{IMAGE:page_id}}`` placeholder instructions; after generation the
+    placeholders are replaced with actual ``![…](url)`` markdown.
     """
     if not settings.OPENROUTER_API_KEY:
         yield json.dumps({
@@ -580,28 +639,56 @@ async def consolidate_comprehensive_stream(
         page_name = img_data.get("page_name", "页面")
         page_id = img_data.get("page_id", "")
         info = page_info.get(page_id, {})
-        part = f"### {page_name}\n"
+        part = f"### {page_name}（页面ID: {page_id}）\n"
         if info.get("description"):
             part += f"- 页面描述：{info['description']}\n"
         if info.get("keyElements"):
             part += f"- 关键元素：{', '.join(info['keyElements'])}\n"
         if info.get("layoutDescription"):
             part += f"- 布局说明：{info['layoutDescription']}\n"
-        part += f"- 已生成界面设计图\n"
+        if img_data.get("image_url"):
+            part += f"- 已生成界面设计图（请在对应功能模块描述后使用 `{{{{IMAGE:{page_id}}}}}` 插入）\n"
+        else:
+            part += "- 未生成界面设计图\n"
         design_info_parts.append(part)
 
     design_info = "\n".join(design_info_parts) if design_info_parts else "暂无界面设计信息。"
 
-    user_content = COMPREHENSIVE_USER_TEMPLATE.format(
+    user_text = COMPREHENSIVE_USER_TEMPLATE.format(
         prd_content=prd_content,
         design_info=design_info,
     )
+
+    # Build LLM messages – use multimodal content for capable models
+    is_multimodal = _is_model_multimodal(chat_model or "")
+    image_parts_for_multimodal = []
+
+    if is_multimodal and design_images:
+        for img_data in design_images:
+            url = img_data.get("image_url", "")
+            if not url:
+                continue
+            page_name = img_data.get("page_name", "页面")
+            image_parts_for_multimodal.append({
+                "type": "text",
+                "text": f"[{page_name} 的界面设计图]:",
+            })
+            image_parts_for_multimodal.append({
+                "type": "image_url",
+                "image_url": {"url": url},
+            })
+
+    if image_parts_for_multimodal:
+        # Multimodal: text + images in a single HumanMessage
+        human_content = [{"type": "text", "text": user_text}] + image_parts_for_multimodal
+    else:
+        human_content = user_text
 
     try:
         llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
         messages = [
             SystemMessage(content=COMPREHENSIVE_SYSTEM_PROMPT),
-            HumanMessage(content=user_content),
+            HumanMessage(content=human_content),
         ]
 
         tokens = []
@@ -612,6 +699,11 @@ async def consolidate_comprehensive_stream(
                 yield json.dumps({"type": "token", "data": token}) + "\n"
 
         full_content = "".join(tokens)
+
+        # Post-process: replace {{IMAGE:page_id}} with actual image markdown
+        if design_images:
+            full_content = _embed_design_images(full_content, design_images)
+
         yield json.dumps({"type": "comprehensive_complete", "data": full_content}) + "\n"
         yield json.dumps({"type": "done", "data": "综合产品方案整合完成"}) + "\n"
 
