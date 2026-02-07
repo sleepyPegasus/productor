@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchProjects, createProject, deleteProject, exportPRDAsDocx, fetchModels } from '../services/api'
+import SearchableSelect from '../components/SearchableSelect'
 import './ProjectList.css'
 
 const STATUS_LABELS = {
@@ -269,34 +270,24 @@ export default function ProjectList() {
               />
             </label>
             <div className="model-select-row">
-              <label className="model-select-label">
+              <div className="model-select-label">
                 对话模型
-                <select
+                <SearchableSelect
+                  options={chatModels}
                   value={chatModel}
-                  onChange={(e) => setChatModel(e.target.value)}
-                  className="model-select"
-                >
-                  {chatModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="model-select-label">
+                  onChange={setChatModel}
+                  placeholder="搜索并选择对话模型..."
+                />
+              </div>
+              <div className="model-select-label">
                 文生图模型
-                <select
+                <SearchableSelect
+                  options={imageModels}
                   value={imageModel}
-                  onChange={(e) => setImageModel(e.target.value)}
-                  className="model-select"
-                >
-                  {imageModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={setImageModel}
+                  placeholder="搜索并选择文生图模型..."
+                />
+              </div>
             </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowModal(false)}>
