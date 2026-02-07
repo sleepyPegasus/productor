@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchProjects, createProject, deleteProject, exportPRDAsDocx, fetchModels } from '../services/api'
+import { fetchProjects, createProject, updateProject, deleteProject, exportPRDAsDocx, fetchModels } from '../services/api'
 import SearchableSelect from '../components/SearchableSelect'
 import './ProjectList.css'
 
@@ -29,6 +29,7 @@ const STATUS_COLORS = {
 export default function ProjectList() {
   const [projects, setProjects] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [editingProject, setEditingProject] = useState(null)
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [chatModel, setChatModel] = useState('')
@@ -69,6 +70,26 @@ export default function ProjectList() {
     loadModels()
   }, [])
 
+  const openCreateModal = () => {
+    setEditingProject(null)
+    setName('')
+    setDesc('')
+    // Reset to default models
+    if (chatModels.length > 0) setChatModel(chatModels[0].id)
+    if (imageModels.length > 0) setImageModel(imageModels[0].id)
+    setShowModal(true)
+  }
+
+  const openEditModal = (e, project) => {
+    e.stopPropagation()
+    setEditingProject(project)
+    setName(project.name)
+    setDesc(project.description || '')
+    setChatModel(project.chat_model || '')
+    setImageModel(project.image_model || '')
+    setShowModal(true)
+  }
+
   const handleCreate = async () => {
     if (!name.trim()) return
     setLoading(true)
@@ -83,6 +104,39 @@ export default function ProjectList() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleUpdate = async () => {
+    if (!name.trim() || !editingProject) return
+    setLoading(true)
+    try {
+      await updateProject(editingProject.id, {
+        name: name.trim(),
+        description: desc.trim(),
+        chat_model: chatModel,
+        image_model: imageModel,
+      })
+      setShowModal(false)
+      setEditingProject(null)
+      load()
+    } catch {
+      alert('更新失败，请重试')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = () => {
+    if (editingProject) {
+      handleUpdate()
+    } else {
+      handleCreate()
+    }
+  }
+
+  const handleCloseModal = () => {
+    setShowModal(false)
+    setEditingProject(null)
   }
 
   const handleDelete = async (e, id) => {
@@ -155,7 +209,7 @@ export default function ProjectList() {
           <h1>Productor</h1>
           <span className="subtitle">AI 驱动的 PRD 生成工具</span>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn-primary" onClick={openCreateModal}>
           + 新建项目
         </button>
       </header>
@@ -204,6 +258,14 @@ export default function ProjectList() {
             {/* Action buttons */}
             <div className="card-actions">
               <button
+                className="card-action-btn"
+                onClick={(e) => openEditModal(e, p)}
+                title="编辑项目信息"
+              >
+                <span className="action-icon">✏️</span>
+                编辑
+              </button>
+              <button
                 className={`card-action-btn ${hasPrd(p) ? '' : 'btn-disabled'}`}
                 onClick={(e) => hasPrd(p) && handleViewPRD(e, p.id)}
                 disabled={!hasPrd(p)}
@@ -249,9 +311,9 @@ export default function ProjectList() {
       </main>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <h2>新建产品项目</h2>
+        <div className="modal-overlay" onClick={handleCloseModal}>
+          <div className="modal modal-extra-wide" onClick={(e) => e.stopPropagation()}>
+            <h2>{editingProject ? '编辑产品项目' : '新建产品项目'}</h2>
             <label>
               项目名称 <span className="required">*</span>
               <input
@@ -292,15 +354,17 @@ export default function ProjectList() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowModal(false)}>
+              <button className="btn-secondary" onClick={handleCloseModal}>
                 取消
               </button>
               <button
                 className="btn-primary"
-                onClick={handleCreate}
+                onClick={handleSubmit}
                 disabled={loading || !name.trim()}
               >
-                {loading ? '创建中...' : '创建并进入'}
+                {loading
+                  ? (editingProject ? '保存中...' : '创建中...')
+                  : (editingProject ? '保存修改' : '创建并进入')}
               </button>
             </div>
           </div>

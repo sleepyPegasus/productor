@@ -26,6 +26,12 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
+    chat_model: Optional[str] = Field(None, max_length=100)
+    image_model: Optional[str] = Field(None, max_length=100)
+
+
+class PrdContentUpdate(BaseModel):
+    content: str = Field(..., min_length=1)
 
 
 class ProjectResponse(BaseModel):
@@ -40,6 +46,7 @@ class ProjectResponse(BaseModel):
     structured_requirement: Optional[str] = None
     pages_plan: Optional[str] = None
     design_images: Optional[str] = None
+    history: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -66,6 +73,11 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
+
+
+class ReviseWithVersionRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    version: Optional[int] = Field(None, description="Target PRD version to revise against")
 
 
 class VersionHistory(BaseModel):

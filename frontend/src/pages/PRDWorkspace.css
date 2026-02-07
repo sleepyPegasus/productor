@@ -125,7 +125,6 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
   min-width: 0;
 }
 
@@ -328,7 +327,7 @@
 /* -------- Right: Chat Panel -------- */
 .chat-panel {
   width: 420px;
-  min-width: 360px;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -1158,6 +1157,312 @@
 .form-select {
   appearance: auto;
   cursor: pointer;
+}
+
+/* -------- PRD/Chat Resizable Split Handle -------- */
+.prd-chat-split-handle {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  transition: background 0.2s;
+}
+.prd-chat-split-handle:hover,
+.prd-chat-split-handle:active {
+  background: var(--primary-light);
+}
+.prd-chat-split-handle .split-handle-bar {
+  width: 3px;
+  height: 40px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+.prd-chat-split-handle:hover .split-handle-bar,
+.prd-chat-split-handle:active .split-handle-bar {
+  background: var(--primary);
+}
+
+/* -------- PRD Editor -------- */
+.prd-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding: 20px;
+  border: none;
+  outline: none;
+  font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text);
+  background: #fefefe;
+  resize: none;
+}
+.prd-editor:focus {
+  background: #fff;
+}
+
+/* -------- Version History Panel -------- */
+.version-history-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+  max-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.version-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.version-history-header h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.btn-close-small {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: var(--text-secondary);
+  padding: 0 4px;
+  line-height: 1;
+}
+.btn-close-small:hover {
+  color: var(--text);
+}
+
+.version-history-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.version-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.version-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--border-light);
+}
+.version-item:hover {
+  background: var(--primary-light);
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 2px 8px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.version-action {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+}
+
+.version-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.version-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* -------- Version Selector in Chat Panel -------- */
+.version-selector {
+  margin-left: auto;
+}
+.version-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  max-width: 240px;
+}
+.version-select:focus {
+  border-color: var(--primary);
+}
+
+.revision-version-hint {
+  background: #fef3c7;
+  color: #b45309;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+/* -------- Design Page List Actions -------- */
+.design-page-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* -------- Comprehensive Tab -------- */
+.comprehensive-tab-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.comprehensive-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.comprehensive-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 36px 40px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+.comprehensive-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.comprehensive-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.comprehensive-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.summary-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.summary-value {
+  font-size: 13px;
+  font-weight: 500;
+}
+.summary-ok {
+  color: #059669;
+}
+.summary-warn {
+  color: #d97706;
+}
+
+.comprehensive-format {
+  margin-bottom: 24px;
+}
+.comprehensive-format .form-label {
+  margin-bottom: 12px;
+}
+
+.format-options {
+  display: flex;
+  gap: 12px;
+}
+
+.format-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s;
+  background: #fff;
+}
+.format-option:hover {
+  border-color: var(--primary);
+}
+.format-option.format-active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.format-option input[type="radio"] {
+  display: none;
+}
+
+.format-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.format-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+.format-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.format-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.btn-large {
+  padding: 14px 24px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* -------- Error page -------- */
