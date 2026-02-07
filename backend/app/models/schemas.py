@@ -21,6 +21,7 @@ class ProjectCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     chat_model: str = Field(default="", max_length=100)
     image_model: str = Field(default="", max_length=100)
+    comprehensive_model: str = Field(default="", max_length=100)
     default_image_resolution: str = Field(default="", max_length=50)
     default_image_ratio: str = Field(default="", max_length=20)
 
@@ -30,6 +31,7 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=2000)
     chat_model: Optional[str] = Field(None, max_length=100)
     image_model: Optional[str] = Field(None, max_length=100)
+    comprehensive_model: Optional[str] = Field(None, max_length=100)
     default_image_resolution: Optional[str] = Field(None, max_length=50)
     default_image_ratio: Optional[str] = Field(None, max_length=20)
 
@@ -44,8 +46,10 @@ class ProjectResponse(BaseModel):
     description: str
     status: ProjectStatus
     version: int
+    category: Optional[str] = "active"
     chat_model: Optional[str] = None
     image_model: Optional[str] = None
+    comprehensive_model: Optional[str] = None
     default_image_resolution: Optional[str] = None
     default_image_ratio: Optional[str] = None
     prd_content: Optional[str] = None
@@ -64,8 +68,10 @@ class ProjectListItem(BaseModel):
     description: str
     status: ProjectStatus
     version: int
+    category: Optional[str] = "active"
     chat_model: Optional[str] = None
     image_model: Optional[str] = None
+    comprehensive_model: Optional[str] = None
     default_image_resolution: Optional[str] = None
     default_image_ratio: Optional[str] = None
     prd_content: Optional[str] = None
@@ -109,3 +115,4 @@ class ModelInfo(BaseModel):
 class ModelsResponse(BaseModel):
     chat_models: list[ModelInfo]
     image_models: list[ModelInfo]
+    multimodal_models: list[ModelInfo]

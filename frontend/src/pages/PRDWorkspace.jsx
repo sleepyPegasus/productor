@@ -690,6 +690,45 @@ export default function PRDWorkspace() {
   const handlePrevSlide = () => setCurrentSlideIndex((prev) => Math.max(0, prev - 1))
   const handleNextSlide = () => setCurrentSlideIndex((prev) => Math.min(pagesWithImages.length - 1, prev + 1))
 
+  // Download design image helper
+  const handleDownloadImage = async (imageUrl, fileName) => {
+    try {
+      if (imageUrl.startsWith('data:')) {
+        // Base64 data URL
+        const a = document.createElement('a')
+        a.href = imageUrl
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } else {
+        // HTTP URL - fetch and download
+        const res = await fetch(imageUrl)
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }
+    } catch {
+      setDesignError('下载图片失败')
+    }
+  }
+
+  const handleDownloadAllImages = async () => {
+    for (const page of pagesWithImages) {
+      const img = getPageImage(page.id)
+      if (img?.image_url) {
+        const ext = img.image_url.startsWith('data:image/png') ? 'png' : 'jpg'
+        await handleDownloadImage(img.image_url, `${project?.name || 'design'}_${page.name}.${ext}`)
+      }
+    }
+  }
+
   const formatVersionTime = (iso) => {
     if (!iso) return '-'
     const d = new Date(iso)
@@ -1105,6 +1144,27 @@ export default function PRDWorkspace() {
                       <button className="slide-nav-btn" onClick={handlePrevSlide} disabled={currentSlideIndex === 0}>&#8592; 上一页</button>
                       <span className="slide-counter">{currentSlideIndex + 1} / {pagesWithImages.length}</span>
                       <button className="slide-nav-btn" onClick={handleNextSlide} disabled={currentSlideIndex === pagesWithImages.length - 1}>下一页 &#8594;</button>
+                      <button
+                        className="slide-nav-btn slide-download-btn"
+                        onClick={() => {
+                          const page = pagesWithImages[currentSlideIndex]
+                          const img = getPageImage(page?.id)
+                          if (img?.image_url) {
+                            const ext = img.image_url.startsWith('data:image/png') ? 'png' : 'jpg'
+                            handleDownloadImage(img.image_url, `${project?.name || 'design'}_${page.name}.${ext}`)
+                          }
+                        }}
+                        title="下载当前设计图"
+                      >
+                        &#11015; 下载
+                      </button>
+                      <button
+                        className="slide-nav-btn slide-download-btn"
+                        onClick={handleDownloadAllImages}
+                        title="下载所有设计图"
+                      >
+                        &#11015; 全部下载
+                      </button>
                     </div>
                     <div className="slide-thumbnails">
                       {pagesWithImages.map((page, idx) => {
@@ -1125,6 +1185,22 @@ export default function PRDWorkspace() {
                     <div className="design-page-detail-header">
                       <button className="btn-back-small" onClick={() => setSelectedPageId(null)}>&#8592; 返回总览</button>
                       <h3>{getSelectedPage()?.name}</h3>
+                      {getPageImage(selectedPageId) && (
+                        <button
+                          className="btn-small btn-download-design"
+                          onClick={() => {
+                            const img = getPageImage(selectedPageId)
+                            const page = getSelectedPage()
+                            if (img?.image_url) {
+                              const ext = img.image_url.startsWith('data:image/png') ? 'png' : 'jpg'
+                              handleDownloadImage(img.image_url, `${project?.name || 'design'}_${page?.name || 'page'}.${ext}`)
+                            }
+                          }}
+                          title="下载设计图"
+                        >
+                          &#11015; 下载设计图
+                        </button>
+                      )}
                     </div>
                     {getPageImage(selectedPageId) ? (
                       <div className="design-page-detail-image">

@@ -1,9 +1,12 @@
 """Project CRUD API endpoints."""
 
-from fastapi import APIRouter, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
 
 from app.config import settings
 from app.db.database import (
+    archive_project,
     create_project,
     delete_project,
     get_chat_history,
@@ -15,6 +18,8 @@ from app.db.database import (
     get_prd_versions,
     get_project,
     list_projects,
+    permanently_delete_project,
+    restore_project,
     save_comprehensive_version,
     save_prd_version,
     update_comprehensive_content,
@@ -34,8 +39,11 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
 @router.get("", response_model=list[ProjectListItem])
-async def api_list_projects():
-    return list_projects()
+async def api_list_projects(
+    category: Optional[str] = Query("active", description="Filter by category: active, archived, deleted"),
+    search: Optional[str] = Query("", description="Search keyword for name/description"),
+):
+    return list_projects(category=category or "active", search=search or "")
 
 
 @router.post("", response_model=ProjectResponse)
@@ -45,6 +53,7 @@ async def api_create_project(body: ProjectCreate):
         body.description,
         chat_model=body.chat_model,
         image_model=body.image_model,
+        comprehensive_model=body.comprehensive_model,
         default_image_resolution=body.default_image_resolution,
         default_image_ratio=body.default_image_ratio,
     )
@@ -76,6 +85,31 @@ async def api_delete_project(project_id: str):
     if not delete_project(project_id):
         raise HTTPException(status_code=404, detail="项目不存在")
     return {"detail": "已删除"}
+
+
+@router.post("/{project_id}/archive")
+async def api_archive_project(project_id: str):
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    archive_project(project_id)
+    return {"detail": "已归档"}
+
+
+@router.post("/{project_id}/restore")
+async def api_restore_project(project_id: str):
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    restore_project(project_id)
+    return {"detail": "已恢复"}
+
+
+@router.delete("/{project_id}/permanent")
+async def api_permanently_delete_project(project_id: str):
+    if not permanently_delete_project(project_id):
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"detail": "已永久删除"}
 
 
 @router.get("/{project_id}/chat", response_model=list[ChatMessage])

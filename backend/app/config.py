@@ -29,6 +29,12 @@ class Settings:
         {"id": "google/gemini-3-pro-image-preview", "name": "Gemini 3 Pro Image"},
         {"id": "stabilityai/stable-diffusion-xl", "name": "Stable Diffusion XL"},
     ]
+    MULTIMODAL_MODELS: list = [
+        {"id": "openai/gpt-4o", "name": "GPT-4o"},
+        {"id": "anthropic/claude-sonnet-4", "name": "Claude Sonnet 4"},
+        {"id": "google/gemini-2.0-flash-001", "name": "Gemini 2.0 Flash"},
+        {"id": "google/gemini-3-pro-preview", "name": "Gemini 3.0 Pro"},
+    ]
 
 
 settings = Settings()
