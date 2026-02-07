@@ -6,6 +6,9 @@ Coordinates the multi-phase pipeline:
   Phase 2.5: UI Image Generation
   Phase 3: PRD Generation
   Phase 4: Feedback Revision
+
+Skills are loaded from the database (managed via the skill management UI).
+Falls back to file-based templates if a skill is not found in the database.
 """
 
 import asyncio
@@ -22,6 +25,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.agents.image_generator import generate_image
 from app.agents.llm import get_chat_llm, get_streaming_llm
 from app.config import settings
+from app.services.skill_service import load_skill_for_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +33,26 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templa
 
 
 def _load_template(name: str) -> str:
+    """Load a prompt template from the filesystem (fallback)."""
     path = os.path.join(TEMPLATES_DIR, "prompts", name)
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 def _load_prd_template() -> str:
+    """Load the PRD template from the filesystem (fallback)."""
     path = os.path.join(TEMPLATES_DIR, "prd_template.md")
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def _get_skill(skill_name: str) -> Optional[dict]:
+    """Load a skill from the database, returning None on failure."""
+    try:
+        return load_skill_for_orchestrator(skill_name)
+    except Exception as e:
+        logger.warning("Failed to load skill '%s' from DB: %s", skill_name, e)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +61,22 @@ def _load_prd_template() -> str:
 
 async def analyze_requirement(requirement: str, chat_model: str = None) -> dict:
     """Analyze raw requirement text and return structured JSON."""
-    llm = get_chat_llm(model=chat_model, temperature=0.4, max_tokens=8192)
-    template_text = _load_template("requirement_analysis.txt")
+    skill = _get_skill("requirement_analysis")
+    if skill:
+        params = skill["parameters"]
+        system_prompt = skill["system_prompt"]
+        template_text = skill["user_prompt_template"]
+        temperature = params.get("temperature", 0.4)
+        max_tokens = params.get("max_tokens", 8192)
+    else:
+        system_prompt = "你是一位资深产品经理和需求分析专家。请严格返回 JSON 格式。"
+        template_text = _load_template("requirement_analysis.txt")
+        temperature = 0.4
+        max_tokens = 8192
+
+    llm = get_chat_llm(model=chat_model, temperature=temperature, max_tokens=max_tokens)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "你是一位资深产品经理和需求分析专家。请严格返回 JSON 格式。"),
+        ("system", system_prompt),
         ("human", template_text),
     ])
     chain = prompt | llm
@@ -77,10 +104,22 @@ async def analyze_requirement_stream(requirement: str, chat_model: str = None) -
 
 async def plan_pages(structured_requirement: dict, chat_model: str = None) -> dict:
     """Plan page structure based on structured requirement."""
-    llm = get_chat_llm(model=chat_model, temperature=0.5, max_tokens=8192)
-    template_text = _load_template("prototype_description.txt")
+    skill = _get_skill("prototype_design")
+    if skill:
+        params = skill["parameters"]
+        system_prompt = skill["system_prompt"]
+        template_text = skill["user_prompt_template"]
+        temperature = params.get("temperature", 0.5)
+        max_tokens = params.get("max_tokens", 8192)
+    else:
+        system_prompt = "你是一位资深 UI/UX 设计师。请严格返回 JSON 格式。"
+        template_text = _load_template("prototype_description.txt")
+        temperature = 0.5
+        max_tokens = 8192
+
+    llm = get_chat_llm(model=chat_model, temperature=temperature, max_tokens=max_tokens)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "你是一位资深 UI/UX 设计师。请严格返回 JSON 格式。"),
+        ("system", system_prompt),
         ("human", template_text),
     ])
     chain = prompt | llm
@@ -186,12 +225,25 @@ async def generate_prd_stream(
     chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD generation token by token."""
-    llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
-    template_text = _load_template("prd_generation.txt")
-    prd_template = _load_prd_template()
+    skill = _get_skill("prd_generation")
+    if skill:
+        params = skill["parameters"]
+        system_prompt = skill["system_prompt"]
+        template_text = skill["user_prompt_template"]
+        prd_template = skill["extra_data"].get("prd_template", _load_prd_template())
+        temperature = params.get("temperature", 0.5)
+        max_tokens = params.get("max_tokens", 16384)
+    else:
+        system_prompt = "你是一位资深产品经理，擅长撰写清晰、完整、专业的 PRD 文档。请直接输出 Markdown 格式的 PRD 文档。"
+        template_text = _load_template("prd_generation.txt")
+        prd_template = _load_prd_template()
+        temperature = 0.5
+        max_tokens = 16384
+
+    llm = get_streaming_llm(model=chat_model, temperature=temperature, max_tokens=max_tokens)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "你是一位资深产品经理，擅长撰写清晰、完整、专业的 PRD 文档。请直接输出 Markdown 格式的 PRD 文档。"),
+        ("system", system_prompt),
         ("human", template_text),
     ])
     chain = prompt | llm
@@ -235,11 +287,23 @@ async def revise_prd_stream(
     chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD revision based on user feedback."""
-    llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
-    template_text = _load_template("feedback_revision.txt")
+    skill = _get_skill("feedback_revision")
+    if skill:
+        params = skill["parameters"]
+        system_prompt = skill["system_prompt"]
+        template_text = skill["user_prompt_template"]
+        temperature = params.get("temperature", 0.5)
+        max_tokens = params.get("max_tokens", 16384)
+    else:
+        system_prompt = "你是一位资深产品经理。请根据反馈修改 PRD 文档，直接输出完整的修改后的 Markdown 文档。"
+        template_text = _load_template("feedback_revision.txt")
+        temperature = 0.5
+        max_tokens = 16384
+
+    llm = get_streaming_llm(model=chat_model, temperature=temperature, max_tokens=max_tokens)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "你是一位资深产品经理。请根据反馈修改 PRD 文档，直接输出完整的修改后的 Markdown 文档。"),
+        ("system", system_prompt),
         ("human", template_text),
     ])
     chain = prompt | llm
@@ -519,38 +583,35 @@ async def run_revision_pipeline_stream(
 # Phase 5: Comprehensive Solution AI Integration
 # ---------------------------------------------------------------------------
 
-COMPREHENSIVE_SYSTEM_PROMPT = """你是一位资深产品经理和文档专家。你的任务是将 PRD 文档和产品界面设计信息整合成一份结构清晰、内容完整、图文并茂的综合产品方案。
+_DEFAULT_COMPREHENSIVE_SYSTEM_PROMPT = (
+    "你是一位资深产品经理和文档专家。你的任务是将 PRD 文档和产品界面设计信息整合成一份"
+    "结构清晰、内容完整、图文并茂的综合产品方案。\n\n"
+    "整合要求：\n"
+    "1. 保留 PRD 的核心内容，但重新组织结构使其更适合作为产品方案呈现\n"
+    "2. 将界面设计描述自然地融入到对应的功能模块中\n"
+    "3. 对内容进行提炼和润色，使表述更加专业和简洁\n"
+    "4. 确保方案具有完整的逻辑脉络：背景→目标→方案→实现\n"
+    "5. 输出 Markdown 格式\n"
+    "6. **重要：在每个页面/功能模块的描述后，必须使用 `{{IMAGE:页面ID}}` 标记来插入对应的"
+    "界面设计图。** 系统会自动将标记替换为实际的设计图。请确保每个有设计图的页面都包含对应的标记。"
+)
 
-整合要求：
-1. 保留 PRD 的核心内容，但重新组织结构使其更适合作为产品方案呈现
-2. 将界面设计描述自然地融入到对应的功能模块中
-3. 对内容进行提炼和润色，使表述更加专业和简洁
-4. 确保方案具有完整的逻辑脉络：背景→目标→方案→实现
-5. 输出 Markdown 格式
-6. **重要：在每个页面/功能模块的描述后，必须使用 `{{{{IMAGE:页面ID}}}}` 标记来插入对应的界面设计图。** 系统会自动将标记替换为实际的设计图。请确保每个有设计图的页面都包含对应的标记。
-"""
-
-COMPREHENSIVE_USER_TEMPLATE = """请将以下 PRD 文档和产品界面设计信息整合为一份综合产品方案。
-
-## PRD 文档内容
-
-{prd_content}
-
-## 产品界面设计信息
-
-{design_info}
-
-请输出整合后的综合产品方案（Markdown 格式）。方案应当包含但不限于：
-- 产品概述与背景
-- 核心目标与价值
-- 功能模块详述（结合界面设计说明和设计图）
-- 信息架构与页面流转
-- 技术方案概要
-- 实施路线图与优先级
-
-**图片插入规则：** 在每个功能模块或页面描述的末尾，使用 `{{{{IMAGE:页面ID}}}}` 标记插入该页面的界面设计图。例如：如果页面ID为 `page_1`，则写 `{{{{IMAGE:page_1}}}}`。请确保所有提供的页面设计图都被引用。
-
-注意：直接输出方案内容，不要包含额外的解释说明。"""
+_DEFAULT_COMPREHENSIVE_USER_TEMPLATE = (
+    "请将以下 PRD 文档和产品界面设计信息整合为一份综合产品方案。\n\n"
+    "## PRD 文档内容\n\n{prd_content}\n\n"
+    "## 产品界面设计信息\n\n{design_info}\n\n"
+    "请输出整合后的综合产品方案（Markdown 格式）。方案应当包含但不限于：\n"
+    "- 产品概述与背景\n"
+    "- 核心目标与价值\n"
+    "- 功能模块详述（结合界面设计说明和设计图）\n"
+    "- 信息架构与页面流转\n"
+    "- 技术方案概要\n"
+    "- 实施路线图与优先级\n\n"
+    "**图片插入规则：** 在每个功能模块或页面描述的末尾，使用 `{{IMAGE:页面ID}}` 标记"
+    "插入该页面的界面设计图。例如：如果页面ID为 `page_1`，则写 `{{IMAGE:page_1}}`。"
+    "请确保所有提供的页面设计图都被引用。\n\n"
+    "注意：直接输出方案内容，不要包含额外的解释说明。"
+)
 
 
 def _embed_design_images(content: str, design_images: list) -> str:
@@ -627,6 +688,20 @@ async def consolidate_comprehensive_stream(
 
     yield json.dumps({"type": "status", "data": "正在通过 AI 整合综合产品方案..."}) + "\n"
 
+    # Load skill from database
+    skill = _get_skill("comprehensive_solution")
+    if skill:
+        params = skill["parameters"]
+        comp_system_prompt = skill["system_prompt"]
+        comp_user_template = skill["user_prompt_template"]
+        temperature = params.get("temperature", 0.5)
+        max_tokens = params.get("max_tokens", 16384)
+    else:
+        comp_system_prompt = _DEFAULT_COMPREHENSIVE_SYSTEM_PROMPT
+        comp_user_template = _DEFAULT_COMPREHENSIVE_USER_TEMPLATE
+        temperature = 0.5
+        max_tokens = 16384
+
     # Build design info text
     design_info_parts = []
     page_info = {}
@@ -654,7 +729,7 @@ async def consolidate_comprehensive_stream(
 
     design_info = "\n".join(design_info_parts) if design_info_parts else "暂无界面设计信息。"
 
-    user_text = COMPREHENSIVE_USER_TEMPLATE.format(
+    user_text = comp_user_template.format(
         prd_content=prd_content,
         design_info=design_info,
     )
@@ -687,9 +762,9 @@ async def consolidate_comprehensive_stream(
     max_retries = 2
     for attempt in range(max_retries + 1):
         try:
-            llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
+            llm = get_streaming_llm(model=chat_model, temperature=temperature, max_tokens=max_tokens)
             messages = [
-                SystemMessage(content=COMPREHENSIVE_SYSTEM_PROMPT),
+                SystemMessage(content=comp_system_prompt),
                 HumanMessage(content=human_content),
             ]
 

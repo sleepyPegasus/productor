@@ -1,5 +1,81 @@
 const BASE = '/api';
 
+// ---------------------------------------------------------------------------
+// Skills API
+// ---------------------------------------------------------------------------
+
+export async function fetchSkills(category = null, isEnabled = null) {
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  if (isEnabled !== null) params.set('is_enabled', isEnabled);
+  const res = await fetch(`${BASE}/skills?${params.toString()}`);
+  if (!res.ok) throw new Error('获取技能列表失败');
+  return res.json();
+}
+
+export async function getSkill(skillId) {
+  const res = await fetch(`${BASE}/skills/${skillId}`);
+  if (!res.ok) throw new Error('获取技能详情失败');
+  return res.json();
+}
+
+export async function createSkill(data) {
+  const res = await fetch(`${BASE}/skills`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '创建技能失败' }));
+    throw new Error(err.detail || '创建技能失败');
+  }
+  return res.json();
+}
+
+export async function updateSkill(skillId, updates) {
+  const res = await fetch(`${BASE}/skills/${skillId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '更新技能失败' }));
+    throw new Error(err.detail || '更新技能失败');
+  }
+  return res.json();
+}
+
+export async function deleteSkill(skillId) {
+  const res = await fetch(`${BASE}/skills/${skillId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '删除技能失败' }));
+    throw new Error(err.detail || '删除技能失败');
+  }
+  return res.json();
+}
+
+export async function resetSkill(skillId) {
+  const res = await fetch(`${BASE}/skills/${skillId}/reset`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '重置技能失败' }));
+    throw new Error(err.detail || '重置技能失败');
+  }
+  return res.json();
+}
+
+export async function duplicateSkill(skillId) {
+  const res = await fetch(`${BASE}/skills/${skillId}/duplicate`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '复制技能失败' }));
+    throw new Error(err.detail || '复制技能失败');
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Projects API
+// ---------------------------------------------------------------------------
+
 export async function fetchProjects(category = 'active', search = '') {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
