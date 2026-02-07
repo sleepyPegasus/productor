@@ -220,10 +220,11 @@ async def api_generate_designs(project_id: str):
         try:
             pages_plan = json.loads(project["pages_plan"])
         except json.JSONDecodeError:
-            pass
+            logger.warning("Failed to parse pages_plan JSON for project %s", project_id)
 
     async def event_stream():
         all_images = []
+        has_error = False
 
         try:
             async for event_str in run_design_generation_stream(
@@ -235,6 +236,8 @@ async def api_generate_designs(project_id: str):
                 if event["type"] == "image":
                     image_data = json.loads(event["data"])
                     all_images.append(image_data)
+                elif event["type"] == "error":
+                    has_error = True
 
                 yield f"data: {event_str}\n\n"
         except (ValueError, OpenAIAuthError) as e:
@@ -245,7 +248,7 @@ async def api_generate_designs(project_id: str):
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
             return
         except Exception as e:
-            logger.error("Unexpected error during design generation: %s", e)
+            logger.error("Unexpected error during design generation: %s", e, exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
             return
 
@@ -292,6 +295,10 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="页面规划数据异常")
 
+    # Normalize pages_plan format (could be a list or dict)
+    if isinstance(pages_plan, list):
+        pages_plan = {"pages": pages_plan}
+
     pages = pages_plan.get("pages", [])
     target_page = None
     for p in pages:
@@ -332,7 +339,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
             return
         except Exception as e:
-            logger.error("Unexpected error during single page design: %s", e)
+            logger.error("Unexpected error during single page design: %s", e, exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
             return
 
