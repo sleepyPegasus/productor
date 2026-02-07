@@ -1400,7 +1400,19 @@ export default function PRDWorkspace() {
                     />
                   ) : (
                     <div className="comprehensive-preview prd-markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{comprehensiveContent}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          img: ({ node, alt, src, ...props }) => (
+                            <figure className="prd-image-figure">
+                              <img src={src} alt={alt || ''} className="prd-image" loading="lazy" {...props} />
+                              {alt && <figcaption className="prd-image-caption">{alt}</figcaption>}
+                            </figure>
+                          ),
+                        }}
+                      >
+                        {comprehensiveContent}
+                      </ReactMarkdown>
                     </div>
                   )}
                 </div>
