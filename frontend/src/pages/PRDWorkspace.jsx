@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -100,6 +100,7 @@ export default function PRDWorkspace() {
   const comprehensiveAbortRef = useRef(null)
   const chatEndRef = useRef(null)
   const prdEndRef = useRef(null)
+  const comprehensiveEndRef = useRef(null)
   const textareaRef = useRef(null)
 
   const handleTabChange = (tab) => {
@@ -174,6 +175,13 @@ export default function PRDWorkspace() {
       prdEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [prdContent, streaming])
+
+  // Auto-scroll comprehensive content when generating
+  useEffect(() => {
+    if (comprehensiveGenerating) {
+      comprehensiveEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [comprehensiveContent, comprehensiveGenerating])
 
   // Refresh PRD versions when panel opens
   useEffect(() => {
@@ -748,6 +756,45 @@ export default function PRDWorkspace() {
     single_page_generated: '单页生成',
     ai_generated: 'AI 整合',
   }
+
+  // Pre-process comprehensive content: extract long data URIs so remark can parse them
+  const { processedContent: comprehensiveDisplayContent, imageMap: comprehensiveImageMap } = useMemo(() => {
+    if (!comprehensiveContent) return { processedContent: '', imageMap: {} }
+    const map = {}
+    let counter = 0
+    const processed = comprehensiveContent.replace(
+      /!\[([^\]]*)\]\((data:[^)]{256,})\)/g,
+      (_, alt, dataUri) => {
+        const key = `__img_placeholder_${counter++}__`
+        map[key] = dataUri
+        return `![${alt}](${key})`
+      }
+    )
+    return { processedContent: processed, imageMap: map }
+  }, [comprehensiveContent])
+
+  // Memoize comprehensive markdown to avoid expensive re-renders on unrelated state changes
+  const comprehensiveMarkdown = useMemo(() => {
+    if (!comprehensiveDisplayContent) return null
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          img: ({ node, alt, src, ...props }) => {
+            const resolvedSrc = comprehensiveImageMap[src] || src
+            return (
+              <figure className="prd-image-figure">
+                <img src={resolvedSrc} alt={alt || ''} className="prd-image" loading="lazy" {...props} />
+                {alt && <figcaption className="prd-image-caption">{alt}</figcaption>}
+              </figure>
+            )
+          },
+        }}
+      >
+        {comprehensiveDisplayContent}
+      </ReactMarkdown>
+    )
+  }, [comprehensiveDisplayContent, comprehensiveImageMap])
 
   if (error && !project) {
     return (
@@ -1404,19 +1451,8 @@ export default function PRDWorkspace() {
                     />
                   ) : (
                     <div className="comprehensive-preview prd-markdown">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          img: ({ node, alt, src, ...props }) => (
-                            <figure className="prd-image-figure">
-                              <img src={src} alt={alt || ''} className="prd-image" loading="lazy" {...props} />
-                              {alt && <figcaption className="prd-image-caption">{alt}</figcaption>}
-                            </figure>
-                          ),
-                        }}
-                      >
-                        {comprehensiveContent}
-                      </ReactMarkdown>
+                      {comprehensiveMarkdown}
+                      <div ref={comprehensiveEndRef} />
                     </div>
                   )}
                 </div>
