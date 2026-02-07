@@ -263,4 +263,10 @@
   color: #b45309;
 }
 
+/* Extra wide modal for model selection */
+.modal.modal-extra-wide {
+  max-width: 720px;
+  width: 90vw;
+}
+
 /* modal-actions now in global.css */

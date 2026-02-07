@@ -7,13 +7,19 @@ from app.db.database import (
     create_project,
     delete_project,
     get_chat_history,
+    get_design_version_images,
+    get_design_versions,
+    get_prd_version_content,
+    get_prd_versions,
     get_project,
     list_projects,
+    save_prd_version,
     update_project,
 )
 from app.models.schemas import (
     ChatMessage,
     ModelsResponse,
+    PrdContentUpdate,
     ProjectCreate,
     ProjectListItem,
     ProjectResponse,
@@ -72,3 +78,63 @@ async def api_get_chat_history(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     return get_chat_history(project_id)
+
+
+# PRD content editing and versioning
+@router.put("/{project_id}/prd-content")
+async def api_update_prd_content(project_id: str, body: PrdContentUpdate):
+    """Update PRD content (manual edit) and save version."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    # Save current content as version before updating
+    if project.get("prd_content"):
+        save_prd_version(project_id, project["prd_content"], "auto_save")
+    # Save new content
+    new_version = project["version"] + 1
+    updated = update_project(project_id, prd_content=body.content, version=new_version)
+    save_prd_version(project_id, body.content, "manual_edit")
+    return updated
+
+
+@router.get("/{project_id}/prd-versions")
+async def api_get_prd_versions(project_id: str):
+    """Get list of PRD version snapshots."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return get_prd_versions(project_id)
+
+
+@router.get("/{project_id}/prd-versions/{version}")
+async def api_get_prd_version_content(project_id: str, version: int):
+    """Get PRD content for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    content = get_prd_version_content(project_id, version)
+    if content is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    return {"version": version, "content": content}
+
+
+# Design version history
+@router.get("/{project_id}/design-versions")
+async def api_get_design_versions(project_id: str):
+    """Get list of design version snapshots."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return get_design_versions(project_id)
+
+
+@router.get("/{project_id}/design-versions/{version}")
+async def api_get_design_version_images(project_id: str, version: int):
+    """Get design images for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    images = get_design_version_images(project_id, version)
+    if images is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    return {"version": version, "images": images}

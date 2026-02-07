@@ -22,6 +22,16 @@ export async function getProject(id) {
   return res.json();
 }
 
+export async function updateProject(id, updates) {
+  const res = await fetch(`${BASE}/projects/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('更新项目失败');
+  return res.json();
+}
+
 export async function deleteProject(id) {
   const res = await fetch(`${BASE}/projects/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('删除项目失败');
@@ -37,6 +47,43 @@ export async function getChatHistory(id) {
 export async function fetchModels() {
   const res = await fetch(`${BASE}/models`);
   if (!res.ok) throw new Error('获取模型列表失败');
+  return res.json();
+}
+
+// PRD content editing
+export async function updatePrdContent(projectId, content) {
+  const res = await fetch(`${BASE}/projects/${projectId}/prd-content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error('保存 PRD 内容失败');
+  return res.json();
+}
+
+// PRD version history
+export async function getPrdVersions(projectId) {
+  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions`);
+  if (!res.ok) throw new Error('获取版本历史失败');
+  return res.json();
+}
+
+export async function getPrdVersionContent(projectId, version) {
+  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions/${version}`);
+  if (!res.ok) throw new Error('获取版本内容失败');
+  return res.json();
+}
+
+// Design version history
+export async function getDesignVersions(projectId) {
+  const res = await fetch(`${BASE}/projects/${projectId}/design-versions`);
+  if (!res.ok) throw new Error('获取设计版本历史失败');
+  return res.json();
+}
+
+export async function getDesignVersionImages(projectId, version) {
+  const res = await fetch(`${BASE}/projects/${projectId}/design-versions/${version}`);
+  if (!res.ok) throw new Error('获取设计版本失败');
   return res.json();
 }
 
@@ -145,6 +192,34 @@ export async function exportPRDAsDocx(projectId, projectName = 'PRD') {
   const a = document.createElement('a');
   a.href = url;
   a.download = `${projectName}_PRD.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Export comprehensive product plan (PRD + design images).
+ * @param {string} projectId
+ * @param {string} projectName
+ * @param {string} format - 'docx', 'pdf', or 'pptx'
+ */
+export async function exportComprehensive(projectId, projectName = '产品方案', format = 'docx') {
+  const res = await fetch(`${BASE}/projects/${projectId}/export/comprehensive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '导出失败' }));
+    throw new Error(err.detail || '导出失败');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ext = format === 'pptx' ? 'pptx' : 'docx';
+  a.download = `${projectName}_产品方案.${ext}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -310,13 +385,16 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
  * Revise PRD via SSE stream.
  * Same callback shape as generatePRD.
  */
-export function revisePRD(projectId, message, callbacks) {
+export function revisePRD(projectId, message, callbacks, version = null) {
   const controller = new AbortController();
+
+  const body = { message }
+  if (version !== null) body.version = version
 
   fetch(`${BASE}/projects/${projectId}/revise`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then((res) => {

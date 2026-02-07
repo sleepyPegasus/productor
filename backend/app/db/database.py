@@ -39,6 +39,8 @@ def init_db():
             design_images TEXT DEFAULT '[]',
             history TEXT DEFAULT '[]',
             chat_history TEXT DEFAULT '[]',
+            prd_versions TEXT DEFAULT '[]',
+            design_versions TEXT DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -48,6 +50,8 @@ def init_db():
         ("design_images", "'[]'"),
         ("chat_model", "''"),
         ("image_model", "''"),
+        ("prd_versions", "'[]'"),
+        ("design_versions", "'[]'"),
     ]:
         try:
             conn.execute(f"SELECT {col} FROM projects LIMIT 1")
@@ -69,8 +73,9 @@ def create_project(name: str, description: str = "", chat_model: str = "", image
         """INSERT INTO projects (id, name, description, status, version,
            chat_model, image_model,
            raw_requirement, structured_requirement, pages_plan, prd_content,
-           design_images, history, chat_history, created_at, updated_at)
-           VALUES (?, ?, ?, 'created', 0, ?, ?, '', '', '', '', '[]', '[]', '[]', ?, ?)""",
+           design_images, history, chat_history, prd_versions, design_versions,
+           created_at, updated_at)
+           VALUES (?, ?, ?, 'created', 0, ?, ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
         (project_id, name, description, chat_model, image_model, now, now),
     )
     conn.commit()
@@ -149,3 +154,88 @@ def append_version_history(project_id: str, action: str, feedback: str = None):
         "timestamp": _now(),
     })
     update_project(project_id, history=json.dumps(history, ensure_ascii=False))
+
+
+def save_prd_version(project_id: str, content: str, action: str = "manual_edit"):
+    """Save current PRD content as a version snapshot."""
+    project = get_project(project_id)
+    if not project:
+        return
+    prd_versions = json.loads(project.get("prd_versions") or "[]")
+    version_num = len(prd_versions) + 1
+    prd_versions.append({
+        "version": version_num,
+        "content": content,
+        "action": action,
+        "timestamp": _now(),
+    })
+    update_project(project_id, prd_versions=json.dumps(prd_versions, ensure_ascii=False))
+    return version_num
+
+
+def get_prd_versions(project_id: str) -> list[dict]:
+    """Get all PRD version snapshots (metadata only)."""
+    project = get_project(project_id)
+    if not project:
+        return []
+    prd_versions = json.loads(project.get("prd_versions") or "[]")
+    return [{
+        "version": v["version"],
+        "action": v.get("action", ""),
+        "timestamp": v["timestamp"],
+    } for v in prd_versions]
+
+
+def get_prd_version_content(project_id: str, version: int) -> Optional[str]:
+    """Get PRD content for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        return None
+    prd_versions = json.loads(project.get("prd_versions") or "[]")
+    for v in prd_versions:
+        if v["version"] == version:
+            return v["content"]
+    return None
+
+
+def save_design_version(project_id: str, design_images: list, action: str = "generated"):
+    """Save current design images as a version snapshot."""
+    project = get_project(project_id)
+    if not project:
+        return
+    design_versions = json.loads(project.get("design_versions") or "[]")
+    version_num = len(design_versions) + 1
+    design_versions.append({
+        "version": version_num,
+        "images": design_images,
+        "action": action,
+        "timestamp": _now(),
+    })
+    update_project(project_id, design_versions=json.dumps(design_versions, ensure_ascii=False))
+    return version_num
+
+
+def get_design_versions(project_id: str) -> list[dict]:
+    """Get all design version snapshots metadata."""
+    project = get_project(project_id)
+    if not project:
+        return []
+    design_versions = json.loads(project.get("design_versions") or "[]")
+    return [{
+        "version": v["version"],
+        "action": v.get("action", ""),
+        "image_count": len(v.get("images", [])),
+        "timestamp": v["timestamp"],
+    } for v in design_versions]
+
+
+def get_design_version_images(project_id: str, version: int) -> Optional[list]:
+    """Get design images for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        return None
+    design_versions = json.loads(project.get("design_versions") or "[]")
+    for v in design_versions:
+        if v["version"] == version:
+            return v.get("images", [])
+    return None

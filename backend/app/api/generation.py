@@ -20,9 +20,11 @@ from app.db.database import (
     append_chat_message,
     append_version_history,
     get_project,
+    save_design_version,
+    save_prd_version,
     update_project,
 )
-from app.models.schemas import ChatRequest
+from app.models.schemas import ChatRequest, ReviseWithVersionRequest
 
 router = APIRouter(prefix="/api/projects", tags=["generation"])
 
@@ -103,6 +105,8 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
                     append_chat_message(project_id, "assistant", prd_content)
                 update_project(project_id, **updates)
                 append_version_history(project_id, "created")
+                if prd_content:
+                    save_prd_version(project_id, prd_content, "generated")
 
     return StreamingResponse(
         event_stream(),
@@ -116,7 +120,7 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
 
 
 @router.post("/{project_id}/revise")
-async def api_revise_prd(project_id: str, body: ChatRequest):
+async def api_revise_prd(project_id: str, body: ReviseWithVersionRequest):
     """Revise existing PRD based on user feedback.
 
     Streams SSE events similar to generate.
@@ -141,13 +145,21 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
         except json.JSONDecodeError:
             pass
 
+    # Use specific version content if requested
+    target_prd = project["prd_content"]
+    if body.version is not None:
+        from app.db.database import get_prd_version_content
+        version_content = get_prd_version_content(project_id, body.version)
+        if version_content:
+            target_prd = version_content
+
     async def event_stream():
         prd_content = None
         has_error = False
 
         try:
             async for event_str in run_revision_pipeline_stream(
-                project["prd_content"], structured, feedback, chat_model=chat_model
+                target_prd, structured, feedback, chat_model=chat_model
             ):
                 event = json.loads(event_str)
 
@@ -181,6 +193,7 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
                 )
                 append_chat_message(project_id, "assistant", prd_content)
                 append_version_history(project_id, "revised", feedback)
+                save_prd_version(project_id, prd_content, "revised")
 
     return StreamingResponse(
         event_stream(),
@@ -257,6 +270,7 @@ async def api_generate_designs(project_id: str):
                     project_id,
                     design_images=json.dumps(all_images, ensure_ascii=False),
                 )
+                save_design_version(project_id, all_images, "batch_generated")
 
     return StreamingResponse(
         event_stream(),
@@ -360,6 +374,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
                     project_id,
                     design_images=json.dumps(updated, ensure_ascii=False),
                 )
+                save_design_version(project_id, updated, "single_page_generated")
 
     return StreamingResponse(
         event_stream(),

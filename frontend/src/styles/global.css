@@ -75,6 +75,11 @@ a {
   width: 520px;
 }
 
+.modal-extra-wide {
+  width: 720px;
+  max-width: 92vw;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
