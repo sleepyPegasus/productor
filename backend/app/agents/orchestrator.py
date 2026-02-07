@@ -118,6 +118,7 @@ def _build_image_prompt(
     product_name: str = "",
     image_resolution: str = "",
     image_ratio: str = "",
+    image_extra_requirements: str = "",
 ) -> str:
     """Build an image generation prompt from a page plan entry."""
     name = page.get("name", "页面")
@@ -137,6 +138,8 @@ def _build_image_prompt(
         prompt += f"目标分辨率：{image_resolution}。"
     if image_ratio:
         prompt += f"画面比例：{image_ratio}。"
+    if image_extra_requirements:
+        prompt += f"其他要求：{image_extra_requirements}。"
     prompt += "现代简洁风格，高保真原型图，白色背景，清晰的UI组件和排版。"
     return prompt
 
@@ -195,16 +198,6 @@ async def generate_prd_stream(
     req_str = json.dumps(structured_requirement, ensure_ascii=False, indent=2)
     if pages_plan:
         req_str += "\n\n页面规划信息：\n" + json.dumps(pages_plan, ensure_ascii=False, indent=2)
-
-    # Append image URLs info so the LLM can embed them in the PRD
-    if page_images:
-        image_info = "\n\n已生成的页面原型图（请在原型设计章节使用 Markdown 图片语法引用）：\n"
-        pages = pages_plan.get("pages", []) if pages_plan else []
-        page_name_map = {p.get("id", ""): p.get("name", "") for p in pages}
-        for page_id, url in page_images.items():
-            page_name = page_name_map.get(page_id, page_id)
-            image_info += f'- {page_name}: ![{page_name}]({url})\n'
-        req_str += image_info
 
     async for chunk in chain.astream({
         "structured_requirement": req_str,
@@ -289,7 +282,7 @@ async def run_full_pipeline_stream(
     Yields JSON-line events: status, requirement, images, token, prd_complete, done
     """
     # Phase 1: Requirement Analysis
-    yield json.dumps({"type": "status", "data": "阶段 1/4: 正在分析需求..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 1/3: 正在分析需求..."}) + "\n"
     structured = await analyze_requirement(requirement, chat_model=chat_model)
     yield json.dumps({
         "type": "requirement",
@@ -297,7 +290,7 @@ async def run_full_pipeline_stream(
     }) + "\n"
 
     # Phase 2: Page Planning
-    yield json.dumps({"type": "status", "data": "阶段 2/4: 正在规划页面结构..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 2/3: 正在规划页面结构..."}) + "\n"
     pages = None
     try:
         pages = await plan_pages(structured, chat_model=chat_model)
@@ -308,31 +301,14 @@ async def run_full_pipeline_stream(
     except Exception:
         yield json.dumps({"type": "status", "data": "页面规划跳过（非关键步骤）"}) + "\n"
 
-    # Phase 2.5: UI Image Generation
+    # Phase 2.5: UI Image Generation skipped – images are managed separately
+    # in the Design tab to avoid embedding images in the PRD Markdown.
     page_images = {}
-    if pages and settings.OPENROUTER_API_KEY:
-        yield json.dumps({"type": "status", "data": "阶段 3/4: 正在生成页面原型图..."}) + "\n"
-        product_name = structured.get("productName", "")
-        try:
-            page_images = await generate_page_images(pages, product_name, image_model=image_model)
-            if page_images:
-                yield json.dumps({
-                    "type": "images",
-                    "data": json.dumps(page_images, ensure_ascii=False),
-                }) + "\n"
-                yield json.dumps({
-                    "type": "status",
-                    "data": f"已生成 {len(page_images)} 张页面原型图",
-                }) + "\n"
-        except Exception:
-            yield json.dumps({"type": "status", "data": "原型图生成跳过（非关键步骤）"}) + "\n"
-    else:
-        yield json.dumps({"type": "status", "data": "阶段 3/4: 跳过原型图生成（未配置 API）"}) + "\n"
 
     # Phase 3: PRD Generation (streamed)
-    yield json.dumps({"type": "status", "data": "阶段 4/4: 正在生成 PRD 文档..."}) + "\n"
+    yield json.dumps({"type": "status", "data": "阶段 3/3: 正在生成 PRD 文档..."}) + "\n"
     prd_tokens = []
-    async for event_str in generate_prd_stream(structured, pages, page_images or None, chat_model=chat_model):
+    async for event_str in generate_prd_stream(structured, pages, None, chat_model=chat_model):
         yield event_str
         event = json.loads(event_str)
         if event["type"] == "token":
@@ -460,6 +436,7 @@ async def run_single_page_design_stream(
     image_model: str = None,
     image_resolution: str = "",
     image_ratio: str = "",
+    image_extra_requirements: str = "",
 ) -> AsyncGenerator[str, None]:
     """Generate a design image for a single page.
 
@@ -483,6 +460,7 @@ async def run_single_page_design_stream(
     prompt = _build_image_prompt(
         page, product_name,
         image_resolution=image_resolution, image_ratio=image_ratio,
+        image_extra_requirements=image_extra_requirements,
     )
     url = await generate_image(prompt, model=image_model)
 

@@ -54,6 +54,8 @@ def init_db():
         ("design_versions", "'[]'"),
         ("comprehensive_content", "''"),
         ("comprehensive_versions", "'[]'"),
+        ("default_image_resolution", "''"),
+        ("default_image_ratio", "''"),
     ]:
         try:
             conn.execute(f"SELECT {col} FROM projects LIMIT 1")
@@ -67,18 +69,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_project(name: str, description: str = "", chat_model: str = "", image_model: str = "") -> dict:
+def create_project(
+    name: str,
+    description: str = "",
+    chat_model: str = "",
+    image_model: str = "",
+    default_image_resolution: str = "",
+    default_image_ratio: str = "",
+) -> dict:
     project_id = uuid.uuid4().hex[:8]
     now = _now()
     conn = get_connection()
     conn.execute(
         """INSERT INTO projects (id, name, description, status, version,
-           chat_model, image_model,
+           chat_model, image_model, default_image_resolution, default_image_ratio,
            raw_requirement, structured_requirement, pages_plan, prd_content,
            design_images, history, chat_history, prd_versions, design_versions,
            created_at, updated_at)
-           VALUES (?, ?, ?, 'created', 0, ?, ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
-        (project_id, name, description, chat_model, image_model, now, now),
+           VALUES (?, ?, ?, 'created', 0, ?, ?, ?, ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
+        (project_id, name, description, chat_model, image_model,
+         default_image_resolution, default_image_ratio, now, now),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -90,6 +100,7 @@ def list_projects() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
         "SELECT id, name, description, status, version, chat_model, image_model, "
+        "default_image_resolution, default_image_ratio, "
         "prd_content, design_images, created_at, updated_at "
         "FROM projects ORDER BY updated_at DESC"
     ).fetchall()

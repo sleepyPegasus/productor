@@ -45,6 +45,8 @@ async def api_create_project(body: ProjectCreate):
         body.description,
         chat_model=body.chat_model,
         image_model=body.image_model,
+        default_image_resolution=body.default_image_resolution,
+        default_image_ratio=body.default_image_ratio,
     )
     return project
 

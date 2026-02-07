@@ -35,6 +35,7 @@ class SinglePageDesignRequest(BaseModel):
     page_id: str = Field(..., min_length=1)
     image_resolution: str = Field(default="", description="Image resolution e.g. '1920x1080'")
     image_ratio: str = Field(default="", description="Image aspect ratio e.g. '16:9'")
+    image_extra_requirements: str = Field(default="", description="Additional requirements for image generation")
 
 
 @router.post("/{project_id}/generate")
@@ -335,6 +336,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
 
     image_resolution = body.image_resolution or ""
     image_ratio = body.image_ratio or ""
+    image_extra_requirements = body.image_extra_requirements or ""
 
     async def event_stream():
         image_data = None
@@ -343,6 +345,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
             async for event_str in run_single_page_design_stream(
                 target_page, product_name=product_name, image_model=image_model,
                 image_resolution=image_resolution, image_ratio=image_ratio,
+                image_extra_requirements=image_extra_requirements,
             ):
                 event = json.loads(event_str)
 

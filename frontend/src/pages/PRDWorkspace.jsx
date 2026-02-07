@@ -109,6 +109,9 @@ export default function PRDWorkspace() {
     else setSearchParams({})
   }
 
+  // Comprehensive version selection state
+  const [selectedComprehensiveVersion, setSelectedComprehensiveVersion] = useState(null)
+
   // Load project and chat history
   useEffect(() => {
     let cancelled = false
@@ -139,6 +142,19 @@ export default function PRDWorkspace() {
         if (proj.comprehensive_content) {
           setComprehensiveContent(proj.comprehensive_content)
         }
+
+        // Preload all version lists
+        Promise.all([
+          getPrdVersions(proj.id).then(setPrdVersions).catch(() => {}),
+          getDesignVersions(proj.id).then(setDesignVersions).catch(() => {}),
+          getComprehensiveVersions(proj.id).then((versions) => {
+            setComprehensiveVersions(versions)
+            // Default to latest comprehensive version
+            if (versions.length > 0) {
+              setSelectedComprehensiveVersion(versions[versions.length - 1].version)
+            }
+          }).catch(() => {}),
+        ])
       } catch {
         setError('项目加载失败')
       }
@@ -159,24 +175,29 @@ export default function PRDWorkspace() {
     }
   }, [prdContent, streaming])
 
-  // Load PRD versions when panel opens
+  // Refresh PRD versions when panel opens
   useEffect(() => {
     if (showPrdVersions) {
       getPrdVersions(id).then(setPrdVersions).catch(() => {})
     }
   }, [showPrdVersions, id])
 
-  // Load design versions when panel opens
+  // Refresh design versions when panel opens
   useEffect(() => {
     if (showDesignVersions) {
       getDesignVersions(id).then(setDesignVersions).catch(() => {})
     }
   }, [showDesignVersions, id])
 
-  // Load comprehensive versions when panel opens
+  // Refresh comprehensive versions when panel opens
   useEffect(() => {
     if (showComprehensiveVersions) {
-      getComprehensiveVersions(id).then(setComprehensiveVersions).catch(() => {})
+      getComprehensiveVersions(id).then((versions) => {
+        setComprehensiveVersions(versions)
+        if (versions.length > 0 && !selectedComprehensiveVersion) {
+          setSelectedComprehensiveVersion(versions[versions.length - 1].version)
+        }
+      }).catch(() => {})
     }
   }, [showComprehensiveVersions, id])
 
@@ -421,7 +442,13 @@ export default function PRDWorkspace() {
     setDesignError('')
     setGeneratingPageId(pageId)
 
-    const imageConfig = pageImageConfigs[pageId] || {}
+    const pageConfig = pageImageConfigs[pageId] || {}
+    // Merge project defaults with page-specific config (page-specific takes priority)
+    const imageConfig = {
+      resolution: pageConfig.resolution || project?.default_image_resolution || '',
+      ratio: pageConfig.ratio || project?.default_image_ratio || '',
+      extraRequirements: pageConfig.extraRequirements || '',
+    }
 
     const abort = generateSinglePageDesign(id, pageId, {
       onImage(imageData) {
@@ -507,20 +534,6 @@ export default function PRDWorkspace() {
     }
   }
 
-  // Comprehensive export handler
-  const handleComprehensiveExport = async () => {
-    if (comprehensiveExporting) return
-    setComprehensiveExporting(true)
-    setComprehensiveError('')
-    try {
-      await exportComprehensive(id, project?.name || '产品方案', comprehensiveFormat)
-    } catch (err) {
-      setComprehensiveError(err.message || '导出失败')
-    } finally {
-      setComprehensiveExporting(false)
-    }
-  }
-
   // Comprehensive AI generation handler
   const handleComprehensiveGenerate = () => {
     if (comprehensiveGenerating) return
@@ -545,6 +558,13 @@ export default function PRDWorkspace() {
         setComprehensiveStatus('')
         getProject(id).then((p) => {
           if (p) setProject(p)
+        }).catch(() => {})
+        // Refresh comprehensive versions and select the latest
+        getComprehensiveVersions(id).then((versions) => {
+          setComprehensiveVersions(versions)
+          if (versions.length > 0) {
+            setSelectedComprehensiveVersion(versions[versions.length - 1].version)
+          }
         }).catch(() => {})
       },
       onError(msg) {
@@ -588,6 +608,7 @@ export default function PRDWorkspace() {
     try {
       const data = await getComprehensiveVersionContent(id, version)
       setComprehensiveContent(data.content || '')
+      setSelectedComprehensiveVersion(version)
       setShowComprehensiveVersions(false)
       setComprehensiveStatus(`已加载综合方案版本 ${version}`)
       setTimeout(() => setComprehensiveStatus(''), 2000)
@@ -595,6 +616,20 @@ export default function PRDWorkspace() {
       setComprehensiveError('加载综合方案版本失败')
     } finally {
       setLoadingComprehensiveVersion(false)
+    }
+  }
+
+  // Comprehensive export handler (exports selected version)
+  const handleComprehensiveExportSelected = async () => {
+    if (comprehensiveExporting || !selectedComprehensiveVersion) return
+    setComprehensiveExporting(true)
+    setComprehensiveError('')
+    try {
+      await exportComprehensive(id, project?.name || '产品方案', comprehensiveFormat)
+    } catch (err) {
+      setComprehensiveError(err.message || '导出失败')
+    } finally {
+      setComprehensiveExporting(false)
     }
   }
 
@@ -1008,6 +1043,7 @@ export default function PRDWorkspace() {
                           <div className="design-page-config-tags">
                             {pageConfig.resolution && <span className="config-tag">{pageConfig.resolution}</span>}
                             {pageConfig.ratio && <span className="config-tag">{pageConfig.ratio}</span>}
+                            {pageConfig.extraRequirements && <span className="config-tag" title={pageConfig.extraRequirements}>+其他要求</span>}
                           </div>
                         )}
                         <div className="design-page-btn-row">
@@ -1157,7 +1193,7 @@ export default function PRDWorkspace() {
                       const val = e.target.value
                       setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], resolution: val } }))
                     }}>
-                      <option value="">默认</option>
+                      <option value="">{project?.default_image_resolution ? `项目默认 (${project.default_image_resolution})` : '默认'}</option>
                       {RESOLUTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
                   </label>
@@ -1167,9 +1203,22 @@ export default function PRDWorkspace() {
                       const val = e.target.value
                       setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], ratio: val } }))
                     }}>
-                      <option value="">默认</option>
+                      <option value="">{project?.default_image_ratio ? `项目默认 (${project.default_image_ratio})` : '默认'}</option>
                       {RATIO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
+                  </label>
+                  <label className="form-label">
+                    其他要求
+                    <textarea
+                      className="form-textarea"
+                      rows={3}
+                      placeholder="输入对图片的其他要求，如：使用深色主题、突出品牌色、增加数据图表元素..."
+                      value={pageImageConfigs[imageConfigPage]?.extraRequirements || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], extraRequirements: val } }))
+                      }}
+                    />
                   </label>
                 </div>
                 <div className="modal-actions">
@@ -1226,13 +1275,6 @@ export default function PRDWorkspace() {
                         </button>
                       </>
                     )}
-                    <button
-                      className="btn-primary btn-sm"
-                      onClick={handleComprehensiveGenerate}
-                      disabled={comprehensiveGenerating}
-                    >
-                      {comprehensiveGenerating ? 'AI 整合中...' : comprehensiveContent ? '重新 AI 整合' : 'AI 内容整合'}
-                    </button>
                   </div>
                 </div>
 
@@ -1248,7 +1290,7 @@ export default function PRDWorkspace() {
                     ) : (
                       <div className="version-list">
                         {comprehensiveVersions.map((v) => (
-                          <div className="version-item" key={v.version}>
+                          <div className={`version-item ${selectedComprehensiveVersion === v.version ? 'version-item-active' : ''}`} key={v.version}>
                             <div className="version-info">
                               <span className="version-num">v{v.version}</span>
                               <span className="version-action">{VERSION_ACTION_LABELS[v.action] || v.action}</span>
@@ -1272,7 +1314,7 @@ export default function PRDWorkspace() {
                 <div className="comprehensive-content-area">
                   {!comprehensiveContent && !comprehensiveGenerating ? (
                     <div className="comprehensive-empty-content">
-                      <p>点击「AI 内容整合」按钮，通过大语言模型将 PRD 文档和产品界面设计信息整合为一份综合产品方案。</p>
+                      <p>点击右侧「生成综合方案」按钮，通过大语言模型将 PRD 文档和产品界面设计信息整合为一份综合产品方案。</p>
                     </div>
                   ) : isEditingComprehensive ? (
                     <textarea
@@ -1315,6 +1357,41 @@ export default function PRDWorkspace() {
                 </div>
 
                 <div className="comprehensive-card">
+                  <h4>生成方案</h4>
+                  <button
+                    className="btn-primary btn-full"
+                    onClick={handleComprehensiveGenerate}
+                    disabled={comprehensiveGenerating}
+                  >
+                    {comprehensiveGenerating ? 'AI 整合中...' : comprehensiveContent ? '重新生成综合方案' : '生成综合方案'}
+                  </button>
+                </div>
+
+                {comprehensiveVersions.length > 0 && (
+                  <div className="comprehensive-card">
+                    <h4>选择方案版本</h4>
+                    <div className="comprehensive-version-selector">
+                      <select
+                        className="form-select"
+                        value={selectedComprehensiveVersion ?? ''}
+                        onChange={(e) => {
+                          const ver = e.target.value ? parseInt(e.target.value) : null
+                          setSelectedComprehensiveVersion(ver)
+                          if (ver) handleLoadComprehensiveVersion(ver)
+                        }}
+                      >
+                        <option value="">请选择版本</option>
+                        {comprehensiveVersions.map((v) => (
+                          <option key={v.version} value={v.version}>
+                            v{v.version} - {VERSION_ACTION_LABELS[v.action] || v.action} ({formatVersionTime(v.timestamp)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="comprehensive-card">
                   <h4>导出方案</h4>
                   <div className="comprehensive-format">
                     <div className="format-options format-options-vertical">
@@ -1347,10 +1424,11 @@ export default function PRDWorkspace() {
 
                   <button
                     className="btn-primary btn-full"
-                    onClick={handleComprehensiveExport}
-                    disabled={comprehensiveExporting}
+                    onClick={handleComprehensiveExportSelected}
+                    disabled={comprehensiveExporting || !selectedComprehensiveVersion}
+                    title={!selectedComprehensiveVersion ? '请先选择一个综合方案版本' : ''}
                   >
-                    {comprehensiveExporting ? '正在导出...' : '导出综合方案'}
+                    {comprehensiveExporting ? '正在导出...' : !selectedComprehensiveVersion ? '请先选择版本' : '导出综合方案'}
                   </button>
                 </div>
               </aside>
