@@ -1,10 +1,14 @@
 """PRD generation and chat API with SSE streaming."""
 
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from openai import AuthenticationError as OpenAIAuthError
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from app.agents.orchestrator import (
     run_full_pipeline_stream,
@@ -56,19 +60,33 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
         pages_plan = None
         prd_content = None
 
-        async for event_str in run_full_pipeline_stream(
-            requirement, chat_model=chat_model, image_model=image_model
-        ):
-            event = json.loads(event_str)
+        try:
+            async for event_str in run_full_pipeline_stream(
+                requirement, chat_model=chat_model, image_model=image_model
+            ):
+                event = json.loads(event_str)
 
-            # Track structured data for DB update
-            if event["type"] == "result":
-                result_data = json.loads(event["data"])
-                structured = result_data.get("structured_requirement")
-                pages_plan = result_data.get("pages_plan")
-                prd_content = result_data.get("prd_content")
+                # Track structured data for DB update
+                if event["type"] == "result":
+                    result_data = json.loads(event["data"])
+                    structured = result_data.get("structured_requirement")
+                    pages_plan = result_data.get("pages_plan")
+                    prd_content = result_data.get("prd_content")
 
-            yield f"data: {event_str}\n\n"
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM authentication error during generation: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+            update_project(project_id, status="error")
+            return
+        except Exception as e:
+            logger.error("Unexpected error during generation: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'生成过程中发生错误: {str(e)}'})}\n\n"
+            update_project(project_id, status="error")
+            return
 
         # Persist results to DB
         if structured or prd_content:
@@ -123,16 +141,30 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
     async def event_stream():
         prd_content = None
 
-        async for event_str in run_revision_pipeline_stream(
-            project["prd_content"], structured, feedback, chat_model=chat_model
-        ):
-            event = json.loads(event_str)
+        try:
+            async for event_str in run_revision_pipeline_stream(
+                project["prd_content"], structured, feedback, chat_model=chat_model
+            ):
+                event = json.loads(event_str)
 
-            if event["type"] == "result":
-                result_data = json.loads(event["data"])
-                prd_content = result_data.get("prd_content")
+                if event["type"] == "result":
+                    result_data = json.loads(event["data"])
+                    prd_content = result_data.get("prd_content")
 
-            yield f"data: {event_str}\n\n"
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM authentication error during revision: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+            update_project(project_id, status="error")
+            return
+        except Exception as e:
+            logger.error("Unexpected error during revision: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'修改过程中发生错误: {str(e)}'})}\n\n"
+            update_project(project_id, status="error")
+            return
 
         # Persist
         if prd_content:
@@ -193,17 +225,29 @@ async def api_generate_designs(project_id: str):
     async def event_stream():
         all_images = []
 
-        async for event_str in run_design_generation_stream(
-            structured, pages_plan, project["prd_content"],
-            chat_model=chat_model, image_model=image_model,
-        ):
-            event = json.loads(event_str)
+        try:
+            async for event_str in run_design_generation_stream(
+                structured, pages_plan, project["prd_content"],
+                chat_model=chat_model, image_model=image_model,
+            ):
+                event = json.loads(event_str)
 
-            if event["type"] == "image":
-                image_data = json.loads(event["data"])
-                all_images.append(image_data)
+                if event["type"] == "image":
+                    image_data = json.loads(event["data"])
+                    all_images.append(image_data)
 
-            yield f"data: {event_str}\n\n"
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM authentication error during design generation: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+            return
+        except Exception as e:
+            logger.error("Unexpected error during design generation: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
+            return
 
         # Persist generated images to DB
         if all_images:
@@ -270,15 +314,27 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
     async def event_stream():
         image_data = None
 
-        async for event_str in run_single_page_design_stream(
-            target_page, product_name=product_name, image_model=image_model,
-        ):
-            event = json.loads(event_str)
+        try:
+            async for event_str in run_single_page_design_stream(
+                target_page, product_name=product_name, image_model=image_model,
+            ):
+                event = json.loads(event_str)
 
-            if event["type"] == "image":
-                image_data = json.loads(event["data"])
+                if event["type"] == "image":
+                    image_data = json.loads(event["data"])
 
-            yield f"data: {event_str}\n\n"
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM authentication error during single page design: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+            return
+        except Exception as e:
+            logger.error("Unexpected error during single page design: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
+            return
 
         # Update design_images in DB - merge with existing
         if image_data:
