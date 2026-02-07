@@ -437,7 +437,7 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
 /**
  * Generate AI-integrated comprehensive product solution via SSE stream.
  * @param {string} projectId
- * @param {object} callbacks - { onToken, onStatus, onComprehensiveComplete, onDone, onError }
+ * @param {object} callbacks - { onToken, onStatus, onComprehensiveComplete, onComprehensiveReset, onDone, onError }
  * @returns {function} abort function
  */
 export function generateComprehensive(projectId, callbacks) {
@@ -480,6 +480,9 @@ export function generateComprehensive(projectId, callbacks) {
                     break;
                   case 'comprehensive_complete':
                     callbacks.onComprehensiveComplete?.(event.data);
+                    break;
+                  case 'comprehensive_reset':
+                    callbacks.onComprehensiveReset?.();
                     break;
                   case 'done':
                     callbacks.onDone?.();
