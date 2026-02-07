@@ -270,7 +270,8 @@ export async function exportComprehensive(projectId, projectName = '产品方案
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const ext = format === 'pptx' ? 'pptx' : 'docx';
+  const extMap = { pptx: 'pptx', pdf: 'pdf', docx: 'docx' };
+  const ext = extMap[format] || 'docx';
   a.download = `${projectName}_产品方案.${ext}`;
   document.body.appendChild(a);
   a.click();
