@@ -18,6 +18,8 @@ class ProjectStatus(str, Enum):
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
+    chat_model: str = Field(default="", max_length=100)
+    image_model: str = Field(default="", max_length=100)
 
 
 class ProjectUpdate(BaseModel):
@@ -31,6 +33,8 @@ class ProjectResponse(BaseModel):
     description: str
     status: ProjectStatus
     version: int
+    chat_model: Optional[str] = None
+    image_model: Optional[str] = None
     prd_content: Optional[str] = None
     structured_requirement: Optional[str] = None
     pages_plan: Optional[str] = None
@@ -45,6 +49,8 @@ class ProjectListItem(BaseModel):
     description: str
     status: ProjectStatus
     version: int
+    chat_model: Optional[str] = None
+    image_model: Optional[str] = None
     prd_content: Optional[str] = None
     design_images: Optional[str] = None
     created_at: str
@@ -71,3 +77,13 @@ class VersionHistory(BaseModel):
 class StreamEvent(BaseModel):
     type: str  # "token", "status", "prd_update", "done", "error"
     data: str
+
+
+class ModelInfo(BaseModel):
+    id: str
+    name: str
+
+
+class ModelsResponse(BaseModel):
+    chat_models: list[ModelInfo]
+    image_models: list[ModelInfo]

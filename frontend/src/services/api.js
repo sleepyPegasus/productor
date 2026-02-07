@@ -6,11 +6,11 @@ export async function fetchProjects() {
   return res.json();
 }
 
-export async function createProject(name, description = '') {
+export async function createProject(name, description = '', chatModel = '', imageModel = '') {
   const res = await fetch(`${BASE}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, chat_model: chatModel, image_model: imageModel }),
   });
   if (!res.ok) throw new Error('创建项目失败');
   return res.json();
@@ -31,6 +31,12 @@ export async function deleteProject(id) {
 export async function getChatHistory(id) {
   const res = await fetch(`${BASE}/projects/${id}/chat`);
   if (!res.ok) throw new Error('获取聊天记录失败');
+  return res.json();
+}
+
+export async function fetchModels() {
+  const res = await fetch(`${BASE}/models`);
+  if (!res.ok) throw new Error('获取模型列表失败');
   return res.json();
 }
 
@@ -157,6 +163,82 @@ export function generateDesigns(projectId, callbacks) {
   fetch(`${BASE}/projects/${projectId}/generate-designs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('设计图生成请求失败');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function read() {
+        reader
+          .read()
+          .then(({ done, value }) => {
+            if (done) {
+              callbacks.onDone?.();
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.replace(/^data:\s*/, '').trim();
+              if (!trimmed) continue;
+              try {
+                const event = JSON.parse(trimmed);
+                switch (event.type) {
+                  case 'image':
+                    callbacks.onImage?.(JSON.parse(event.data));
+                    break;
+                  case 'status':
+                    callbacks.onStatus?.(event.data);
+                    break;
+                  case 'done':
+                    callbacks.onDone?.(event.data);
+                    break;
+                  case 'error':
+                    callbacks.onError?.(event.data);
+                    break;
+                }
+              } catch {
+                // skip malformed line
+              }
+            }
+            read();
+          })
+          .catch((err) => {
+            if (err.name !== 'AbortError') {
+              callbacks.onError?.(err.message);
+            }
+          });
+      }
+      read();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError?.(err.message);
+      }
+    });
+
+  return () => controller.abort();
+}
+
+/**
+ * Generate design image for a single page via SSE stream.
+ * @param {string} projectId
+ * @param {string} pageId
+ * @param {object} callbacks - { onImage, onStatus, onDone, onError }
+ * @returns {function} abort function
+ */
+export function generateSinglePageDesign(projectId, pageId, callbacks) {
+  const controller = new AbortController();
+
+  fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page_id: pageId }),
     signal: controller.signal,
   })
     .then((res) => {

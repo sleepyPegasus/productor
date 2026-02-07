@@ -40,9 +40,9 @@ def _load_prd_template() -> str:
 # Phase 1: Requirement Analysis
 # ---------------------------------------------------------------------------
 
-async def analyze_requirement(requirement: str) -> dict:
+async def analyze_requirement(requirement: str, chat_model: str = None) -> dict:
     """Analyze raw requirement text and return structured JSON."""
-    llm = get_chat_llm(temperature=0.4, max_tokens=8192)
+    llm = get_chat_llm(model=chat_model, temperature=0.4, max_tokens=8192)
     template_text = _load_template("requirement_analysis.txt")
     prompt = ChatPromptTemplate.from_messages([
         ("system", "你是一位资深产品经理和需求分析专家。请严格返回 JSON 格式。"),
@@ -59,10 +59,10 @@ async def analyze_requirement(requirement: str) -> dict:
     return json.loads(content)
 
 
-async def analyze_requirement_stream(requirement: str) -> AsyncGenerator[str, None]:
+async def analyze_requirement_stream(requirement: str, chat_model: str = None) -> AsyncGenerator[str, None]:
     """Stream the requirement analysis process, yielding status updates."""
     yield json.dumps({"type": "status", "data": "正在分析需求..."}) + "\n"
-    result = await analyze_requirement(requirement)
+    result = await analyze_requirement(requirement, chat_model=chat_model)
     yield json.dumps({"type": "requirement", "data": json.dumps(result, ensure_ascii=False)}) + "\n"
     yield json.dumps({"type": "status", "data": "需求分析完成"}) + "\n"
 
@@ -71,9 +71,9 @@ async def analyze_requirement_stream(requirement: str) -> AsyncGenerator[str, No
 # Phase 2: Prototype Page Planning
 # ---------------------------------------------------------------------------
 
-async def plan_pages(structured_requirement: dict) -> dict:
+async def plan_pages(structured_requirement: dict, chat_model: str = None) -> dict:
     """Plan page structure based on structured requirement."""
-    llm = get_chat_llm(temperature=0.5, max_tokens=8192)
+    llm = get_chat_llm(model=chat_model, temperature=0.5, max_tokens=8192)
     template_text = _load_template("prototype_description.txt")
     prompt = ChatPromptTemplate.from_messages([
         ("system", "你是一位资深 UI/UX 设计师。请严格返回 JSON 格式。"),
@@ -117,6 +117,7 @@ def _build_image_prompt(page: dict, product_name: str = "") -> str:
 async def generate_page_images(
     pages_plan: dict,
     product_name: str = "",
+    image_model: str = None,
 ) -> dict[str, str]:
     """Generate UI images for each page in the plan.
 
@@ -134,7 +135,7 @@ async def generate_page_images(
         page_id = page.get("id", "")
         prompt = _build_image_prompt(page, product_name)
         async with semaphore:
-            url = await generate_image(prompt)
+            url = await generate_image(prompt, model=image_model)
         if url:
             results[page_id] = url
 
@@ -150,9 +151,10 @@ async def generate_prd_stream(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
     page_images: Optional[dict[str, str]] = None,
+    chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD generation token by token."""
-    llm = get_streaming_llm(temperature=0.5, max_tokens=16384)
+    llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
     template_text = _load_template("prd_generation.txt")
     prd_template = _load_prd_template()
 
@@ -189,10 +191,11 @@ async def generate_prd(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
     page_images: Optional[dict[str, str]] = None,
+    chat_model: str = None,
 ) -> str:
     """Generate complete PRD (non-streaming)."""
     tokens = []
-    async for event_str in generate_prd_stream(structured_requirement, pages_plan, page_images):
+    async for event_str in generate_prd_stream(structured_requirement, pages_plan, page_images, chat_model=chat_model):
         event = json.loads(event_str)
         if event["type"] == "token":
             tokens.append(event["data"])
@@ -207,9 +210,10 @@ async def revise_prd_stream(
     current_prd: str,
     structured_requirement: dict,
     feedback: str,
+    chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD revision based on user feedback."""
-    llm = get_streaming_llm(temperature=0.5, max_tokens=16384)
+    llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
     template_text = _load_template("feedback_revision.txt")
 
     prompt = ChatPromptTemplate.from_messages([
@@ -232,10 +236,11 @@ async def revise_prd(
     current_prd: str,
     structured_requirement: dict,
     feedback: str,
+    chat_model: str = None,
 ) -> str:
     """Revise PRD based on feedback (non-streaming)."""
     tokens = []
-    async for event_str in revise_prd_stream(current_prd, structured_requirement, feedback):
+    async for event_str in revise_prd_stream(current_prd, structured_requirement, feedback, chat_model=chat_model):
         event = json.loads(event_str)
         if event["type"] == "token":
             tokens.append(event["data"])
@@ -246,14 +251,18 @@ async def revise_prd(
 # Full pipeline orchestrator
 # ---------------------------------------------------------------------------
 
-async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None]:
+async def run_full_pipeline_stream(
+    requirement: str,
+    chat_model: str = None,
+    image_model: str = None,
+) -> AsyncGenerator[str, None]:
     """Run the full PRD generation pipeline with streaming output.
 
     Yields JSON-line events: status, requirement, images, token, prd_complete, done
     """
     # Phase 1: Requirement Analysis
     yield json.dumps({"type": "status", "data": "阶段 1/4: 正在分析需求..."}) + "\n"
-    structured = await analyze_requirement(requirement)
+    structured = await analyze_requirement(requirement, chat_model=chat_model)
     yield json.dumps({
         "type": "requirement",
         "data": json.dumps(structured, ensure_ascii=False),
@@ -263,7 +272,7 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
     yield json.dumps({"type": "status", "data": "阶段 2/4: 正在规划页面结构..."}) + "\n"
     pages = None
     try:
-        pages = await plan_pages(structured)
+        pages = await plan_pages(structured, chat_model=chat_model)
         yield json.dumps({
             "type": "pages_plan",
             "data": json.dumps(pages, ensure_ascii=False),
@@ -273,11 +282,11 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
 
     # Phase 2.5: UI Image Generation
     page_images = {}
-    if pages and settings.GLM_IMAGE_API_KEY:
+    if pages and settings.OPENROUTER_API_KEY:
         yield json.dumps({"type": "status", "data": "阶段 3/4: 正在生成页面原型图..."}) + "\n"
         product_name = structured.get("productName", "")
         try:
-            page_images = await generate_page_images(pages, product_name)
+            page_images = await generate_page_images(pages, product_name, image_model=image_model)
             if page_images:
                 yield json.dumps({
                     "type": "images",
@@ -290,12 +299,12 @@ async def run_full_pipeline_stream(requirement: str) -> AsyncGenerator[str, None
         except Exception:
             yield json.dumps({"type": "status", "data": "原型图生成跳过（非关键步骤）"}) + "\n"
     else:
-        yield json.dumps({"type": "status", "data": "阶段 3/4: 跳过原型图生成（未配置图片API）"}) + "\n"
+        yield json.dumps({"type": "status", "data": "阶段 3/4: 跳过原型图生成（未配置 API）"}) + "\n"
 
     # Phase 3: PRD Generation (streamed)
     yield json.dumps({"type": "status", "data": "阶段 4/4: 正在生成 PRD 文档..."}) + "\n"
     prd_tokens = []
-    async for event_str in generate_prd_stream(structured, pages, page_images or None):
+    async for event_str in generate_prd_stream(structured, pages, page_images or None, chat_model=chat_model):
         yield event_str
         event = json.loads(event_str)
         if event["type"] == "token":
@@ -321,6 +330,8 @@ async def run_design_generation_stream(
     structured_requirement: dict,
     pages_plan: Optional[dict],
     prd_content: str,
+    chat_model: str = None,
+    image_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Generate UI design images as a standalone step.
 
@@ -335,7 +346,7 @@ async def run_design_generation_stream(
     if not pages_plan or not pages_plan.get("pages"):
         yield json.dumps({"type": "status", "data": "正在分析页面结构..."}) + "\n"
         try:
-            pages_plan = await plan_pages(structured_requirement)
+            pages_plan = await plan_pages(structured_requirement, chat_model=chat_model)
         except Exception as e:
             yield json.dumps({"type": "error", "data": f"页面结构分析失败: {str(e)}"}) + "\n"
             return
@@ -352,10 +363,10 @@ async def run_design_generation_stream(
     }) + "\n"
 
     # Step 2: Generate images concurrently (max 4 at a time)
-    if not settings.GLM_IMAGE_API_KEY:
+    if not settings.OPENROUTER_API_KEY:
         yield json.dumps({
             "type": "error",
-            "data": "未配置图片生成 API（GLM_IMAGE_API_KEY），无法生成界面设计图",
+            "data": "未配置 OpenRouter API Key（OPENROUTER_API_KEY），无法生成界面设计图",
         }) + "\n"
         return
 
@@ -367,7 +378,7 @@ async def run_design_generation_stream(
         page_name = page.get("name", f"页面{idx + 1}")
         prompt = _build_image_prompt(page, product_name)
         async with semaphore:
-            url = await generate_image(prompt)
+            url = await generate_image(prompt, model=image_model)
         if url:
             results[page_id] = {
                 "page_id": page_id,
@@ -395,16 +406,66 @@ async def run_design_generation_stream(
     yield json.dumps({"type": "done", "data": f"已生成 {generated_count} 张界面设计图"}) + "\n"
 
 
+async def run_single_page_design_stream(
+    page: dict,
+    product_name: str = "",
+    image_model: str = None,
+) -> AsyncGenerator[str, None]:
+    """Generate a design image for a single page.
+
+    Yields JSON-line events: status, image, done, error
+    """
+    if not settings.OPENROUTER_API_KEY:
+        yield json.dumps({
+            "type": "error",
+            "data": "未配置 OpenRouter API Key（OPENROUTER_API_KEY），无法生成界面设计图",
+        }) + "\n"
+        return
+
+    page_id = page.get("id", "page_0")
+    page_name = page.get("name", "页面")
+
+    yield json.dumps({
+        "type": "status",
+        "data": f"正在生成「{page_name}」的界面设计图...",
+    }) + "\n"
+
+    prompt = _build_image_prompt(page, product_name)
+    url = await generate_image(prompt, model=image_model)
+
+    if url:
+        image_data = {
+            "page_id": page_id,
+            "page_name": page_name,
+            "image_url": url,
+            "prompt": prompt,
+        }
+        yield json.dumps({
+            "type": "image",
+            "data": json.dumps(image_data, ensure_ascii=False),
+        }) + "\n"
+        yield json.dumps({
+            "type": "done",
+            "data": f"「{page_name}」界面设计图生成完成",
+        }) + "\n"
+    else:
+        yield json.dumps({
+            "type": "error",
+            "data": f"「{page_name}」界面设计图生成失败",
+        }) + "\n"
+
+
 async def run_revision_pipeline_stream(
     current_prd: str,
     structured_requirement: dict,
     feedback: str,
+    chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Run the revision pipeline with streaming output."""
     yield json.dumps({"type": "status", "data": "正在根据反馈修改 PRD..."}) + "\n"
 
     prd_tokens = []
-    async for event_str in revise_prd_stream(current_prd, structured_requirement, feedback):
+    async for event_str in revise_prd_stream(current_prd, structured_requirement, feedback, chat_model=chat_model):
         yield event_str
         event = json.loads(event_str)
         if event["type"] == "token":

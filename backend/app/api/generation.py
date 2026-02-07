@@ -4,11 +4,13 @@ import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import (
     run_full_pipeline_stream,
     run_revision_pipeline_stream,
     run_design_generation_stream,
+    run_single_page_design_stream,
 )
 from app.db.database import (
     append_chat_message,
@@ -19,6 +21,10 @@ from app.db.database import (
 from app.models.schemas import ChatRequest
 
 router = APIRouter(prefix="/api/projects", tags=["generation"])
+
+
+class SinglePageDesignRequest(BaseModel):
+    page_id: str = Field(..., min_length=1)
 
 
 @router.post("/{project_id}/generate")
@@ -42,12 +48,17 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
     append_chat_message(project_id, "user", requirement)
     update_project(project_id, status="analyzing", raw_requirement=requirement)
 
+    chat_model = project.get("chat_model") or None
+    image_model = project.get("image_model") or None
+
     async def event_stream():
         structured = None
         pages_plan = None
         prd_content = None
 
-        async for event_str in run_full_pipeline_stream(requirement):
+        async for event_str in run_full_pipeline_stream(
+            requirement, chat_model=chat_model, image_model=image_model
+        ):
             event = json.loads(event_str)
 
             # Track structured data for DB update
@@ -100,6 +111,8 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
     append_chat_message(project_id, "user", feedback)
     update_project(project_id, status="revising")
 
+    chat_model = project.get("chat_model") or None
+
     structured = {}
     if project["structured_requirement"]:
         try:
@@ -111,7 +124,7 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
         prd_content = None
 
         async for event_str in run_revision_pipeline_stream(
-            project["prd_content"], structured, feedback
+            project["prd_content"], structured, feedback, chat_model=chat_model
         ):
             event = json.loads(event_str)
 
@@ -160,6 +173,9 @@ async def api_generate_designs(project_id: str):
     if not project["prd_content"]:
         raise HTTPException(status_code=400, detail="请先生成 PRD 文档")
 
+    chat_model = project.get("chat_model") or None
+    image_model = project.get("image_model") or None
+
     structured = {}
     if project["structured_requirement"]:
         try:
@@ -178,7 +194,8 @@ async def api_generate_designs(project_id: str):
         all_images = []
 
         async for event_str in run_design_generation_stream(
-            structured, pages_plan, project["prd_content"]
+            structured, pages_plan, project["prd_content"],
+            chat_model=chat_model, image_model=image_model,
         ):
             event = json.loads(event_str)
 
@@ -193,6 +210,91 @@ async def api_generate_designs(project_id: str):
             update_project(
                 project_id,
                 design_images=json.dumps(all_images, ensure_ascii=False),
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/{project_id}/generate-design-page")
+async def api_generate_single_page_design(project_id: str, body: SinglePageDesignRequest):
+    """Generate UI design image for a single page.
+
+    Streams SSE events:
+      - status: progress message
+      - image: generated image data (page_id, page_name, image_url)
+      - done: generation finished
+      - error: generation failed
+    """
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if not project["pages_plan"]:
+        raise HTTPException(status_code=400, detail="请先生成 PRD 文档")
+
+    image_model = project.get("image_model") or None
+
+    pages_plan = {}
+    try:
+        pages_plan = json.loads(project["pages_plan"])
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="页面规划数据异常")
+
+    pages = pages_plan.get("pages", [])
+    target_page = None
+    for p in pages:
+        if p.get("id") == body.page_id:
+            target_page = p
+            break
+
+    if not target_page:
+        raise HTTPException(status_code=404, detail="页面不存在")
+
+    structured = {}
+    if project["structured_requirement"]:
+        try:
+            structured = json.loads(project["structured_requirement"])
+        except json.JSONDecodeError:
+            pass
+
+    product_name = structured.get("productName", "")
+
+    async def event_stream():
+        image_data = None
+
+        async for event_str in run_single_page_design_stream(
+            target_page, product_name=product_name, image_model=image_model,
+        ):
+            event = json.loads(event_str)
+
+            if event["type"] == "image":
+                image_data = json.loads(event["data"])
+
+            yield f"data: {event_str}\n\n"
+
+        # Update design_images in DB - merge with existing
+        if image_data:
+            existing = []
+            if project["design_images"]:
+                try:
+                    existing = json.loads(project["design_images"])
+                except json.JSONDecodeError:
+                    existing = []
+
+            # Replace if same page_id exists, otherwise append
+            updated = [img for img in existing if img.get("page_id") != image_data["page_id"]]
+            updated.append(image_data)
+            update_project(
+                project_id,
+                design_images=json.dumps(updated, ensure_ascii=False),
             )
 
     return StreamingResponse(
