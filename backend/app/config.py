@@ -25,6 +25,7 @@ class Settings:
     ]
     IMAGE_MODELS: list = [
         {"id": "openai/dall-e-3", "name": "DALL-E 3"},
+        {"id": "google/gemini-3-pro-image-preview", "name": "Gemini 3 Pro Image"},
         {"id": "stabilityai/stable-diffusion-xl", "name": "Stable Diffusion XL"},
     ]
 
