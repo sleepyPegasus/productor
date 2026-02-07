@@ -12,6 +12,7 @@ const STATUS_LABELS = {
   reviewing: '待评审',
   revising: '修改中',
   approved: '已通过',
+  error: '生成失败',
 }
 
 const STATUS_COLORS = {
@@ -22,6 +23,7 @@ const STATUS_COLORS = {
   reviewing: '#3b82f6',
   revising: '#f59e0b',
   approved: '#22c55e',
+  error: '#ef4444',
 }
 
 export default function ProjectList() {
