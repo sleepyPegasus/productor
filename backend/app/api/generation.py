@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api/projects", tags=["generation"])
 
 class SinglePageDesignRequest(BaseModel):
     page_id: str = Field(..., min_length=1)
+    image_resolution: str = Field(default="", description="Image resolution e.g. '1920x1080'")
+    image_ratio: str = Field(default="", description="Image aspect ratio e.g. '16:9'")
 
 
 @router.post("/{project_id}/generate")
@@ -315,12 +317,16 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
 
     product_name = structured.get("productName", "")
 
+    image_resolution = body.image_resolution or ""
+    image_ratio = body.image_ratio or ""
+
     async def event_stream():
         image_data = None
 
         try:
             async for event_str in run_single_page_design_stream(
                 target_page, product_name=product_name, image_model=image_model,
+                image_resolution=image_resolution, image_ratio=image_ratio,
             ):
                 event = json.loads(event_str)
 

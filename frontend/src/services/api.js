@@ -230,15 +230,20 @@ export function generateDesigns(projectId, callbacks) {
  * @param {string} projectId
  * @param {string} pageId
  * @param {object} callbacks - { onImage, onStatus, onDone, onError }
+ * @param {object} [imageConfig] - { resolution, ratio }
  * @returns {function} abort function
  */
-export function generateSinglePageDesign(projectId, pageId, callbacks) {
+export function generateSinglePageDesign(projectId, pageId, callbacks, imageConfig = {}) {
   const controller = new AbortController();
+
+  const body = { page_id: pageId }
+  if (imageConfig.resolution) body.image_resolution = imageConfig.resolution
+  if (imageConfig.ratio) body.image_ratio = imageConfig.ratio
 
   fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ page_id: pageId }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then((res) => {
