@@ -2,32 +2,15 @@
   "name": "productor",
   "version": "1.0.0",
   "description": "AI-powered PRD generator agent - from user requirements to production-ready PRD",
-  "type": "module",
-  "main": "src/index.js",
-  "bin": {
-    "productor": "./src/index.js"
-  },
+  "license": "MIT",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python run.py"
   },
   "keywords": [
     "ai",
     "prd",
     "product-design",
-    "agent",
-    "deepseek",
-    "glm-image"
-  ],
-  "license": "MIT",
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "chalk": "^5.3.0",
-    "dotenv": "^17.2.3",
-    "inquirer": "^9.2.12",
-    "ora": "^7.0.1",
-    "uuid": "^9.0.0"
-  }
+    "agent"
+  ]
 }

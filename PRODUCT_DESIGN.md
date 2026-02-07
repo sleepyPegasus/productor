@@ -300,28 +300,37 @@ PRD 文档 + 原型图
 
 ```
 productor/
-├── src/
-│   ├── index.js                    # CLI 入口
-│   ├── agent/
-│   │   ├── orchestrator.js         # 流程编排引擎
-│   │   ├── requirementAnalyzer.js  # 需求分析 Agent
-│   │   ├── prototypeGenerator.js   # 原型生成 Agent
-│   │   ├── prdGenerator.js         # PRD 生成 Agent
-│   │   └── feedbackProcessor.js    # 反馈处理 Agent
-│   ├── models/
-│   │   ├── deepseek.js             # DeepSeek V3 客户端
-│   │   └── glm-image.js           # GLM-Image 客户端
-│   ├── templates/
-│   │   ├── prd-template.md         # PRD Markdown 模板
-│   │   └── prompts/
-│   │       ├── requirement-analysis.txt
-│   │       ├── prototype-description.txt
-│   │       ├── prd-generation.txt
-│   │       └── feedback-revision.txt
-│   └── utils/
-│       ├── logger.js               # 日志工具
-│       └── fileManager.js          # 文件管理
-├── output/                         # 生成输出目录
+├── backend/                        # Python 后端
+│   ├── app/
+│   │   ├── main.py                 # FastAPI 入口
+│   │   ├── config.py               # 环境配置
+│   │   ├── agents/                 # LangChain Agent 层
+│   │   │   ├── orchestrator.py     # 流程编排（4 阶段 pipeline）
+│   │   │   ├── llm.py              # LLM 客户端工厂
+│   │   │   └── image_generator.py  # 图像生成客户端
+│   │   ├── api/                    # API 路由
+│   │   │   ├── projects.py         # 项目 CRUD
+│   │   │   └── generation.py       # PRD 生成 / 修改（SSE 流式）
+│   │   ├── db/
+│   │   │   └── database.py         # SQLite 数据层
+│   │   ├── models/
+│   │   │   └── schemas.py          # Pydantic 模型
+│   │   └── templates/              # Prompt 模板 + PRD 模板
+│   ├── requirements.txt
+│   ├── run.py
+│   └── .env.example
+├── frontend/                       # React 前端
+│   ├── src/
+│   │   ├── App.jsx                 # 路由入口
+│   │   ├── pages/
+│   │   │   ├── ProjectList.jsx     # 项目列表页
+│   │   │   └── PRDWorkspace.jsx    # PRD 工作台（分屏视图）
+│   │   ├── services/
+│   │   │   └── api.js              # API 客户端 + SSE 流处理
+│   │   └── styles/
+│   │       └── global.css          # 全局样式
+│   ├── package.json
+│   └── vite.config.js
 ├── package.json
 ├── .env.example
 ├── PRODUCT_DESIGN.md               # 本文档

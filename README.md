@@ -54,7 +54,6 @@ productor/
 │   │       └── global.css          # 全局样式
 │   ├── package.json
 │   └── vite.config.js
-└── src/                            # 旧版 CLI（已弃用）
 ```
 
 ## 快速开始
