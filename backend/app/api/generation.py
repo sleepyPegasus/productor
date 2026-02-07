@@ -59,6 +59,7 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
         structured = None
         pages_plan = None
         prd_content = None
+        has_error = False
 
         try:
             async for event_str in run_full_pipeline_stream(
@@ -75,31 +76,31 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
 
                 yield f"data: {event_str}\n\n"
         except (ValueError, OpenAIAuthError) as e:
+            has_error = True
             logger.error("LLM authentication error during generation: %s", e)
             error_msg = str(e) if isinstance(e, ValueError) else (
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            update_project(project_id, status="error")
-            return
         except Exception as e:
+            has_error = True
             logger.error("Unexpected error during generation: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'data': f'生成过程中发生错误: {str(e)}'})}\n\n"
-            update_project(project_id, status="error")
-            return
-
-        # Persist results to DB
-        if structured or prd_content:
-            updates = {"status": "reviewing", "version": project["version"] + 1}
-            if structured:
-                updates["structured_requirement"] = json.dumps(structured, ensure_ascii=False)
-            if pages_plan:
-                updates["pages_plan"] = json.dumps(pages_plan, ensure_ascii=False)
-            if prd_content:
-                updates["prd_content"] = prd_content
-                append_chat_message(project_id, "assistant", prd_content)
-            update_project(project_id, **updates)
-            append_version_history(project_id, "created")
+        finally:
+            # Persist results to DB - runs on success, error, or client disconnect
+            if has_error:
+                update_project(project_id, status="error")
+            elif structured or prd_content:
+                updates = {"status": "reviewing", "version": project["version"] + 1}
+                if structured:
+                    updates["structured_requirement"] = json.dumps(structured, ensure_ascii=False)
+                if pages_plan:
+                    updates["pages_plan"] = json.dumps(pages_plan, ensure_ascii=False)
+                if prd_content:
+                    updates["prd_content"] = prd_content
+                    append_chat_message(project_id, "assistant", prd_content)
+                update_project(project_id, **updates)
+                append_version_history(project_id, "created")
 
     return StreamingResponse(
         event_stream(),
@@ -140,6 +141,7 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
 
     async def event_stream():
         prd_content = None
+        has_error = False
 
         try:
             async for event_str in run_revision_pipeline_stream(
@@ -153,30 +155,30 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
 
                 yield f"data: {event_str}\n\n"
         except (ValueError, OpenAIAuthError) as e:
+            has_error = True
             logger.error("LLM authentication error during revision: %s", e)
             error_msg = str(e) if isinstance(e, ValueError) else (
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            update_project(project_id, status="error")
-            return
         except Exception as e:
+            has_error = True
             logger.error("Unexpected error during revision: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'data': f'修改过程中发生错误: {str(e)}'})}\n\n"
-            update_project(project_id, status="error")
-            return
-
-        # Persist
-        if prd_content:
-            new_version = project["version"] + 1
-            update_project(
-                project_id,
-                status="reviewing",
-                version=new_version,
-                prd_content=prd_content,
-            )
-            append_chat_message(project_id, "assistant", prd_content)
-            append_version_history(project_id, "revised", feedback)
+        finally:
+            # Persist - runs on success, error, or client disconnect
+            if has_error:
+                update_project(project_id, status="error")
+            elif prd_content:
+                new_version = project["version"] + 1
+                update_project(
+                    project_id,
+                    status="reviewing",
+                    version=new_version,
+                    prd_content=prd_content,
+                )
+                append_chat_message(project_id, "assistant", prd_content)
+                append_version_history(project_id, "revised", feedback)
 
     return StreamingResponse(
         event_stream(),
@@ -224,7 +226,6 @@ async def api_generate_designs(project_id: str):
 
     async def event_stream():
         all_images = []
-        has_error = False
 
         try:
             async for event_str in run_design_generation_stream(
@@ -236,8 +237,6 @@ async def api_generate_designs(project_id: str):
                 if event["type"] == "image":
                     image_data = json.loads(event["data"])
                     all_images.append(image_data)
-                elif event["type"] == "error":
-                    has_error = True
 
                 yield f"data: {event_str}\n\n"
         except (ValueError, OpenAIAuthError) as e:
@@ -246,18 +245,16 @@ async def api_generate_designs(project_id: str):
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            return
         except Exception as e:
             logger.error("Unexpected error during design generation: %s", e, exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
-            return
-
-        # Persist generated images to DB
-        if all_images:
-            update_project(
-                project_id,
-                design_images=json.dumps(all_images, ensure_ascii=False),
-            )
+        finally:
+            # Persist generated images to DB - runs on success, error, or client disconnect
+            if all_images:
+                update_project(
+                    project_id,
+                    design_images=json.dumps(all_images, ensure_ascii=False),
+                )
 
     return StreamingResponse(
         event_stream(),
@@ -337,28 +334,26 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            return
         except Exception as e:
             logger.error("Unexpected error during single page design: %s", e, exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'data': f'设计图生成过程中发生错误: {str(e)}'})}\n\n"
-            return
+        finally:
+            # Update design_images in DB - runs on success, error, or client disconnect
+            if image_data:
+                existing = []
+                if project["design_images"]:
+                    try:
+                        existing = json.loads(project["design_images"])
+                    except json.JSONDecodeError:
+                        existing = []
 
-        # Update design_images in DB - merge with existing
-        if image_data:
-            existing = []
-            if project["design_images"]:
-                try:
-                    existing = json.loads(project["design_images"])
-                except json.JSONDecodeError:
-                    existing = []
-
-            # Replace if same page_id exists, otherwise append
-            updated = [img for img in existing if img.get("page_id") != image_data["page_id"]]
-            updated.append(image_data)
-            update_project(
-                project_id,
-                design_images=json.dumps(updated, ensure_ascii=False),
-            )
+                # Replace if same page_id exists, otherwise append
+                updated = [img for img in existing if img.get("page_id") != image_data["page_id"]]
+                updated.append(image_data)
+                update_project(
+                    project_id,
+                    design_images=json.dumps(updated, ensure_ascii=False),
+                )
 
     return StreamingResponse(
         event_stream(),

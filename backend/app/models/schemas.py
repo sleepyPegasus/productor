@@ -13,6 +13,7 @@ class ProjectStatus(str, Enum):
     REVIEWING = "reviewing"
     REVISING = "revising"
     APPROVED = "approved"
+    ERROR = "error"
 
 
 class ProjectCreate(BaseModel):
