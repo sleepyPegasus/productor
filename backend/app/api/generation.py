@@ -242,6 +242,15 @@ async def api_generate_designs(project_id: str):
         except json.JSONDecodeError:
             logger.warning("Failed to parse pages_plan JSON for project %s", project_id)
 
+    # Filter out archived/deleted pages from batch design generation
+    if pages_plan:
+        raw_pages = pages_plan.get("pages", []) if isinstance(pages_plan, dict) else pages_plan
+        active_pages = [p for p in raw_pages if p.get("category", "active") == "active"]
+        if isinstance(pages_plan, dict):
+            pages_plan = {**pages_plan, "pages": active_pages}
+        else:
+            pages_plan = active_pages
+
     async def event_stream():
         all_images = []
 
@@ -431,6 +440,25 @@ async def api_generate_comprehensive(project_id: str):
             pages_plan = json.loads(project["pages_plan"])
         except json.JSONDecodeError:
             pass
+
+    # Filter out archived/deleted pages from comprehensive generation
+    active_page_ids = set()
+    if pages_plan:
+        pages = pages_plan.get("pages", []) if isinstance(pages_plan, dict) else pages_plan
+        active_page_ids = {
+            p.get("id", "")
+            for p in pages
+            if p.get("category", "active") == "active"
+        }
+        # Build filtered pages_plan with only active pages
+        if isinstance(pages_plan, dict):
+            pages_plan = {**pages_plan, "pages": [p for p in pages if p.get("category", "active") == "active"]}
+        else:
+            pages_plan = [p for p in pages_plan if p.get("category", "active") == "active"]
+
+    # Only include design images for active pages
+    if active_page_ids:
+        design_images = [img for img in design_images if img.get("page_id", "") in active_page_ids]
 
     async def event_stream():
         comprehensive_content = ""

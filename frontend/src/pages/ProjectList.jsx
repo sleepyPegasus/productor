@@ -9,6 +9,7 @@ import SearchableSelect from '../components/SearchableSelect'
 import './ProjectList.css'
 
 const RESOLUTION_OPTIONS = [
+  { label: '7680 x 4320 (8K UHD)', value: '7680x4320' },
   { label: '3840 x 2160 (4K UHD)', value: '3840x2160' },
   { label: '2560 x 1440 (2K QHD)', value: '2560x1440' },
   { label: '1920 x 1080 (Full HD)', value: '1920x1080' },

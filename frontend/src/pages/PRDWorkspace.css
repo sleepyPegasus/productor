@@ -1680,6 +1680,131 @@
   border-color: var(--primary);
 }
 
+/* -------- Page Filter Tabs -------- */
+.page-filter-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.page-filter-tab {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.page-filter-tab:hover {
+  background: #fff;
+  color: var(--text);
+}
+.page-filter-tab-active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* -------- Page Inactive State -------- */
+.design-page-item-inactive {
+  opacity: 0.6;
+  background: #fafafa;
+}
+.design-page-item-inactive:hover {
+  opacity: 0.8;
+}
+
+.design-page-archived-badge {
+  font-size: 11px;
+  color: #d97706;
+  background: #fffbeb;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid #fde68a;
+}
+
+.design-page-deleted-badge {
+  font-size: 11px;
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid #fecaca;
+}
+
+/* Page action buttons */
+.btn-archive-page {
+  color: #d97706;
+  border-color: #fde68a;
+}
+.btn-archive-page:hover:not(:disabled) {
+  border-color: #d97706;
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.btn-delete-page {
+  color: #dc2626;
+  border-color: #fecaca;
+}
+.btn-delete-page:hover:not(:disabled) {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.btn-restore-page {
+  color: #059669;
+  border-color: #a7f3d0;
+  flex: 1;
+}
+.btn-restore-page:hover:not(:disabled) {
+  border-color: #059669;
+  color: #059669;
+  background: #ecfdf5;
+}
+
+/* -------- PRD Design Prompt Banner -------- */
+.prd-design-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #eef2ff 0%, #f0fdf4 100%);
+  border-bottom: 1px solid #c7d2fe;
+  flex-shrink: 0;
+}
+.prd-design-prompt-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+.prd-design-prompt .btn-primary {
+  padding: 6px 16px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.prd-design-prompt .btn-dismiss {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.prd-design-prompt .btn-dismiss:hover {
+  color: var(--text);
+}
+
 /* -------- Error page -------- */
 .workspace-error {
   display: flex;

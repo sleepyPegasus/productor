@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import {
   exportPRDAsDocx, exportComprehensive, generatePRD, generateDesigns,
   generateSinglePageDesign, generateComprehensive, getChatHistory, getProject, revisePRD,
-  updatePrdContent, updateComprehensiveContent,
+  updateProject, updatePrdContent, updateComprehensiveContent,
   getPrdVersions, getPrdVersionContent,
   getDesignVersions, getDesignVersionImages,
   getComprehensiveVersions, getComprehensiveVersionContent,
@@ -30,6 +30,9 @@ export default function PRDWorkspace() {
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
+
+  // Design prompt after PRD generation
+  const [showDesignPrompt, setShowDesignPrompt] = useState(false)
 
   // PRD editing state
   const [isEditingPrd, setIsEditingPrd] = useState(false)
@@ -63,6 +66,9 @@ export default function PRDWorkspace() {
   const [designVersions, setDesignVersions] = useState([])
   const [showDesignVersions, setShowDesignVersions] = useState(false)
   const [loadingDesignVersion, setLoadingDesignVersion] = useState(false)
+
+  // Page filter state (for archive/delete)
+  const [pageFilter, setPageFilter] = useState('active') // 'all' | 'active' | 'archived' | 'deleted'
 
   // Edit & config modals
   const [editingPage, setEditingPage] = useState(null)
@@ -254,6 +260,7 @@ export default function PRDWorkspace() {
               content: 'PRD 文档已更新，请在左侧查看。',
               timestamp: new Date().toISOString(),
             }])
+            setShowDesignPrompt(true)
           }
           getProject(id).then((p) => {
             setProject(p)
@@ -297,6 +304,7 @@ export default function PRDWorkspace() {
               content: 'PRD 文档已生成，请在左侧查看。',
               timestamp: new Date().toISOString(),
             }])
+            setShowDesignPrompt(true)
           }
           getProject(id).then((p) => {
             setProject(p)
@@ -329,6 +337,18 @@ export default function PRDWorkspace() {
     abortRef.current?.()
     setStreaming(false)
     setStatus('')
+  }
+
+  // Handle "generate designs" from PRD prompt banner
+  const handleGoToDesignAndGenerate = () => {
+    setShowDesignPrompt(false)
+    handleTabChange('design')
+    // Trigger design generation after tab switch
+    setTimeout(() => {
+      if (!designGenerating && !generatingPageId && pagesList.length > 0) {
+        handleGenerateAllDesigns()
+      }
+    }, 100)
   }
 
   const handleExportDocx = async () => {
@@ -526,6 +546,31 @@ export default function PRDWorkspace() {
     setImageConfigPage(null)
   }
 
+  // Page archive/delete/restore handlers
+  const updatePageCategory = (pageId, category) => {
+    const updatedPages = pagesList.map((p) =>
+      p.id === pageId ? { ...p, category } : p
+    )
+    setPagesList(updatedPages)
+    // Persist to backend
+    updateProject(id, { pages_plan: JSON.stringify({ pages: updatedPages }) }).catch(() => {})
+  }
+
+  const handleArchivePage = (pageId, e) => {
+    e.stopPropagation()
+    updatePageCategory(pageId, 'archived')
+  }
+
+  const handleDeletePage = (pageId, e) => {
+    e.stopPropagation()
+    updatePageCategory(pageId, 'deleted')
+  }
+
+  const handleRestorePage = (pageId, e) => {
+    e.stopPropagation()
+    updatePageCategory(pageId, 'active')
+  }
+
   // Design version handlers
   const handleLoadDesignVersion = async (version) => {
     setLoadingDesignVersion(true)
@@ -673,6 +718,7 @@ export default function PRDWorkspace() {
 
   // Image config presets
   const RESOLUTION_OPTIONS = [
+    { label: '7680 x 4320 (8K UHD)', value: '7680x4320' },
     { label: '3840 x 2160 (4K UHD)', value: '3840x2160' },
     { label: '2560 x 1440 (2K QHD)', value: '2560x1440' },
     { label: '1920 x 1080 (Full HD)', value: '1920x1080' },
@@ -697,6 +743,11 @@ export default function PRDWorkspace() {
 
   const getPageImage = (pageId) => designImages.find((img) => img.page_id === pageId)
   const getSelectedPage = () => selectedPageId ? pagesList.find((p) => p.id === selectedPageId) : null
+
+  // Filtered pages based on page filter
+  const filteredPagesList = pageFilter === 'all'
+    ? pagesList
+    : pagesList.filter((p) => (p.category || 'active') === pageFilter)
 
   const pagesWithImages = pagesList.filter((p) => getPageImage(p.id))
   const handlePrevSlide = () => setCurrentSlideIndex((prev) => Math.max(0, prev - 1))
@@ -901,6 +952,15 @@ export default function PRDWorkspace() {
               </div>
             )}
 
+            {/* Design generation prompt banner */}
+            {showDesignPrompt && prdContent && !streaming && (
+              <div className="prd-design-prompt">
+                <span className="prd-design-prompt-text">PRD 已生成，是否根据新版本生成产品界面设计？</span>
+                <button className="btn-primary" onClick={handleGoToDesignAndGenerate}>生成界面设计</button>
+                <button className="btn-dismiss" onClick={() => setShowDesignPrompt(false)}>&times;</button>
+              </div>
+            )}
+
             <div className="prd-content">
               {isEditingPrd ? (
                 <textarea
@@ -1068,9 +1128,29 @@ export default function PRDWorkspace() {
                     >
                       {showDesignVersions ? '关闭' : '版本'}
                     </button>
-                    <span className="page-count">{pagesList.length} 个页面</span>
+                    <span className="page-count">{pagesList.filter((p) => (p.category || 'active') === 'active').length} / {pagesList.length}</span>
                   </div>
                 </div>
+
+                {/* Page filter tabs */}
+                {pagesList.some((p) => p.category && p.category !== 'active') && (
+                  <div className="page-filter-tabs">
+                    {[
+                      { key: 'active', label: '活跃' },
+                      { key: 'archived', label: '已归档' },
+                      { key: 'deleted', label: '已删除' },
+                      { key: 'all', label: '全部' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        className={`page-filter-tab ${pageFilter === tab.key ? 'page-filter-tab-active' : ''}`}
+                        onClick={() => setPageFilter(tab.key)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Design version history panel */}
                 {showDesignVersions && (
@@ -1099,24 +1179,33 @@ export default function PRDWorkspace() {
                 )}
 
                 <div className="design-page-items">
-                  {pagesList.length === 0 && (
-                    <div className="design-page-empty"><p>页面结构暂未生成</p><p>请先在 PRD 文档中完成需求描述</p></div>
+                  {filteredPagesList.length === 0 && (
+                    <div className="design-page-empty">
+                      {pagesList.length === 0
+                        ? <><p>页面结构暂未生成</p><p>请先在 PRD 文档中完成需求描述</p></>
+                        : <p>当前筛选条件下无页面</p>
+                      }
+                    </div>
                   )}
-                  {pagesList.map((page, idx) => {
+                  {filteredPagesList.map((page, idx) => {
                     const image = getPageImage(page.id)
                     const isSelected = selectedPageId === page.id
                     const isGenerating = generatingPageId === page.id
                     const pageConfig = pageImageConfigs[page.id]
+                    const pageCat = page.category || 'active'
+                    const isInactive = pageCat !== 'active'
                     return (
                       <div
                         key={page.id}
-                        className={`design-page-item ${isSelected ? 'design-page-item-active' : ''}`}
+                        className={`design-page-item ${isSelected ? 'design-page-item-active' : ''} ${isInactive ? 'design-page-item-inactive' : ''}`}
                         onClick={() => setSelectedPageId(page.id)}
                       >
                         <div className="design-page-item-header">
-                          <span className="design-page-number">{idx + 1}</span>
+                          <span className="design-page-number">{pagesList.indexOf(page) + 1}</span>
                           <h4 className="design-page-name">{page.name}</h4>
-                          {image && <span className="design-page-done-badge">已生成</span>}
+                          {pageCat === 'archived' && <span className="design-page-archived-badge">已归档</span>}
+                          {pageCat === 'deleted' && <span className="design-page-deleted-badge">已删除</span>}
+                          {image && pageCat === 'active' && <span className="design-page-done-badge">已生成</span>}
                         </div>
                         <p className="design-page-desc">{page.description || '暂无描述'}</p>
                         {page.keyElements && page.keyElements.length > 0 && (
@@ -1137,15 +1226,23 @@ export default function PRDWorkspace() {
                           </div>
                         )}
                         <div className="design-page-btn-row">
-                          <button className="btn-page-action btn-edit-content" onClick={(e) => handleOpenEditPage(page, e)}>编辑内容</button>
-                          <button className="btn-page-action btn-image-config" onClick={(e) => handleOpenImageConfig(page.id, e)}>图片配置</button>
-                          <button
-                            className={`btn-page-action btn-generate-inline ${isGenerating ? 'btn-generating' : ''}`}
-                            onClick={(e) => { e.stopPropagation(); if (!isGenerating && !designGenerating) handleGeneratePageDesign(page.id) }}
-                            disabled={isGenerating || designGenerating}
-                          >
-                            {isGenerating ? '生成中...' : image ? '重新生成' : '生成设计图'}
-                          </button>
+                          {isInactive ? (
+                            <button className="btn-page-action btn-restore-page" onClick={(e) => handleRestorePage(page.id, e)}>恢复</button>
+                          ) : (
+                            <>
+                              <button className="btn-page-action btn-edit-content" onClick={(e) => handleOpenEditPage(page, e)}>编辑</button>
+                              <button className="btn-page-action btn-image-config" onClick={(e) => handleOpenImageConfig(page.id, e)}>配置</button>
+                              <button
+                                className={`btn-page-action btn-generate-inline ${isGenerating ? 'btn-generating' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); if (!isGenerating && !designGenerating) handleGeneratePageDesign(page.id) }}
+                                disabled={isGenerating || designGenerating}
+                              >
+                                {isGenerating ? '生成中...' : image ? '重新生成' : '生成'}
+                              </button>
+                              <button className="btn-page-action btn-archive-page" onClick={(e) => handleArchivePage(page.id, e)} title="归档">归档</button>
+                              <button className="btn-page-action btn-delete-page" onClick={(e) => handleDeletePage(page.id, e)} title="删除">删除</button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )
