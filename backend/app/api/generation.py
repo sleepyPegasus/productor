@@ -80,12 +80,12 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            update_project(project_id, status="error")
+            update_project(project_id, status="created")
             return
         except Exception as e:
             logger.error("Unexpected error during generation: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'data': f'生成过程中发生错误: {str(e)}'})}\n\n"
-            update_project(project_id, status="error")
+            update_project(project_id, status="created")
             return
 
         # Persist results to DB
@@ -158,12 +158,12 @@ async def api_revise_prd(project_id: str, body: ChatRequest):
                 "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
             )
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
-            update_project(project_id, status="error")
+            update_project(project_id, status="reviewing")
             return
         except Exception as e:
             logger.error("Unexpected error during revision: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'data': f'修改过程中发生错误: {str(e)}'})}\n\n"
-            update_project(project_id, status="error")
+            update_project(project_id, status="reviewing")
             return
 
         # Persist
