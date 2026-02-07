@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   fetchProjects, createProject, updateProject, deleteProject,
   archiveProject, restoreProject, permanentlyDeleteProject,
@@ -481,9 +481,37 @@ export default function ProjectList() {
           <h1>Productor</h1>
           <span className="subtitle">AI 驱动的 PRD 生成工具</span>
         </div>
-        <button className="btn-primary" onClick={openCreateModal}>
-          + 新建项目
-        </button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <Link
+            to="/skills"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '10px 18px',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              fontSize: '14px',
+              fontWeight: 500,
+              color: 'var(--text)',
+              textDecoration: 'none',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--primary)'
+              e.currentTarget.style.color = 'var(--primary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+              e.currentTarget.style.color = 'var(--text)'
+            }}
+          >
+            &#9881; 技能管理
+          </Link>
+          <button className="btn-primary" onClick={openCreateModal}>
+            + 新建项目
+          </button>
+        </div>
       </header>
 
       {/* Filter toolbar */}

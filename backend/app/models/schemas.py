@@ -116,3 +116,55 @@ class ModelsResponse(BaseModel):
     chat_models: list[ModelInfo]
     image_models: list[ModelInfo]
     multimodal_models: list[ModelInfo]
+
+
+# ---------------------------------------------------------------------------
+# Skills
+# ---------------------------------------------------------------------------
+
+class SkillCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, pattern=r'^[a-z][a-z0-9_]*$')
+    display_name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    category: str = Field(default="general", max_length=50)
+    system_prompt: str = Field(default="")
+    user_prompt_template: str = Field(default="")
+    output_format: str = Field(default="text", max_length=20)
+    model_type: str = Field(default="chat", max_length=20)
+    parameters: Optional[dict] = Field(default=None)
+    input_variables: Optional[list] = Field(default=None)
+    extra_data: Optional[dict] = Field(default=None)
+
+
+class SkillUpdate(BaseModel):
+    display_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
+    category: Optional[str] = Field(None, max_length=50)
+    system_prompt: Optional[str] = None
+    user_prompt_template: Optional[str] = None
+    output_format: Optional[str] = Field(None, max_length=20)
+    model_type: Optional[str] = Field(None, max_length=20)
+    parameters: Optional[dict] = None
+    input_variables: Optional[list] = None
+    extra_data: Optional[dict] = None
+    is_enabled: Optional[bool] = None
+
+
+class SkillResponse(BaseModel):
+    id: str
+    name: str
+    display_name: str
+    description: str
+    category: str
+    system_prompt: str
+    user_prompt_template: str
+    output_format: str
+    model_type: str
+    parameters: Optional[str] = None
+    input_variables: Optional[str] = None
+    extra_data: Optional[str] = None
+    is_builtin: bool
+    is_enabled: bool
+    version: int
+    created_at: str
+    updated_at: str

@@ -24,6 +24,26 @@ def get_connection() -> sqlite3.Connection:
 def init_db():
     conn = get_connection()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS skills (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            category TEXT DEFAULT 'general',
+            system_prompt TEXT DEFAULT '',
+            user_prompt_template TEXT DEFAULT '',
+            output_format TEXT DEFAULT 'text',
+            model_type TEXT DEFAULT 'chat',
+            parameters TEXT DEFAULT '{}',
+            input_variables TEXT DEFAULT '[]',
+            extra_data TEXT DEFAULT '{}',
+            is_builtin INTEGER DEFAULT 0,
+            is_enabled INTEGER DEFAULT 1,
+            version INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -366,3 +386,112 @@ def get_comprehensive_version_content(project_id: str, version: int) -> Optional
 def update_comprehensive_content(project_id: str, content: str) -> Optional[dict]:
     """Update the current comprehensive content."""
     return update_project(project_id, comprehensive_content=content)
+
+
+# ---------------------------------------------------------------------------
+# Skills CRUD
+# ---------------------------------------------------------------------------
+
+def create_skill(
+    name: str,
+    display_name: str,
+    description: str = "",
+    category: str = "general",
+    system_prompt: str = "",
+    user_prompt_template: str = "",
+    output_format: str = "text",
+    model_type: str = "chat",
+    parameters: dict = None,
+    input_variables: list = None,
+    extra_data: dict = None,
+    is_builtin: bool = False,
+    is_enabled: bool = True,
+) -> dict:
+    skill_id = uuid.uuid4().hex[:8]
+    now = _now()
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO skills (id, name, display_name, description, category,
+           system_prompt, user_prompt_template, output_format, model_type,
+           parameters, input_variables, extra_data,
+           is_builtin, is_enabled, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+        (skill_id, name, display_name, description, category,
+         system_prompt, user_prompt_template, output_format, model_type,
+         json.dumps(parameters or {}, ensure_ascii=False),
+         json.dumps(input_variables or [], ensure_ascii=False),
+         json.dumps(extra_data or {}, ensure_ascii=False),
+         1 if is_builtin else 0,
+         1 if is_enabled else 0,
+         now, now),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def list_skills(category: str = None, is_enabled: bool = None) -> list[dict]:
+    conn = get_connection()
+    conditions = []
+    params = []
+    if category:
+        conditions.append("category = ?")
+        params.append(category)
+    if is_enabled is not None:
+        conditions.append("is_enabled = ?")
+        params.append(1 if is_enabled else 0)
+    where = ""
+    if conditions:
+        where = "WHERE " + " AND ".join(conditions)
+    rows = conn.execute(
+        f"SELECT * FROM skills {where} ORDER BY is_builtin DESC, updated_at DESC",
+        params,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_skill(skill_id: str) -> Optional[dict]:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_skill_by_name(name: str) -> Optional[dict]:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM skills WHERE name = ? AND is_enabled = 1", (name,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_skill(skill_id: str, **kwargs) -> Optional[dict]:
+    kwargs["updated_at"] = _now()
+    set_clause = ", ".join(f"{k} = ?" for k in kwargs)
+    values = list(kwargs.values()) + [skill_id]
+    conn = get_connection()
+    conn.execute(f"UPDATE skills SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_skill(skill_id: str) -> bool:
+    conn = get_connection()
+    # Only allow deleting non-builtin skills
+    cursor = conn.execute(
+        "DELETE FROM skills WHERE id = ? AND is_builtin = 0",
+        (skill_id,),
+    )
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def skill_exists(name: str) -> bool:
+    conn = get_connection()
+    row = conn.execute("SELECT 1 FROM skills WHERE name = ?", (name,)).fetchone()
+    conn.close()
+    return row is not None
