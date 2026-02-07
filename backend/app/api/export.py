@@ -66,6 +66,10 @@ async def api_export_comprehensive(project_id: str, body: ComprehensiveExportReq
     if not prd_content:
         raise HTTPException(status_code=400, detail="PRD 内容为空，请先生成 PRD")
 
+    # Use AI-integrated comprehensive content if available, otherwise fall back to PRD
+    comprehensive_content = project.get("comprehensive_content", "")
+    export_content = comprehensive_content if comprehensive_content else prd_content
+
     project_name = project.get("name", "产品方案")
 
     design_images = []
@@ -87,7 +91,7 @@ async def api_export_comprehensive(project_id: str, body: ComprehensiveExportReq
         raise HTTPException(status_code=400, detail="不支持的导出格式，请选择 docx, pdf 或 pptx")
 
     buffer, media_type, ext = generate_comprehensive_doc(
-        prd_content=prd_content,
+        prd_content=export_content,
         design_images=design_images,
         pages_plan=pages_plan,
         title=project_name,

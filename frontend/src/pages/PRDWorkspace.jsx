@@ -4,9 +4,11 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   exportPRDAsDocx, exportComprehensive, generatePRD, generateDesigns,
-  generateSinglePageDesign, getChatHistory, getProject, revisePRD,
-  updatePrdContent, getPrdVersions, getPrdVersionContent,
+  generateSinglePageDesign, generateComprehensive, getChatHistory, getProject, revisePRD,
+  updatePrdContent, updateComprehensiveContent,
+  getPrdVersions, getPrdVersionContent,
   getDesignVersions, getDesignVersionImages,
+  getComprehensiveVersions, getComprehensiveVersionContent,
 } from '../services/api'
 import './PRDWorkspace.css'
 
@@ -72,6 +74,22 @@ export default function PRDWorkspace() {
   const [comprehensiveExporting, setComprehensiveExporting] = useState(false)
   const [comprehensiveFormat, setComprehensiveFormat] = useState('docx')
 
+  // Comprehensive AI integration state
+  const [comprehensiveContent, setComprehensiveContent] = useState('')
+  const [comprehensiveGenerating, setComprehensiveGenerating] = useState(false)
+  const [comprehensiveStatus, setComprehensiveStatus] = useState('')
+  const [comprehensiveError, setComprehensiveError] = useState('')
+
+  // Comprehensive editing state
+  const [isEditingComprehensive, setIsEditingComprehensive] = useState(false)
+  const [editComprehensiveContent, setEditComprehensiveContent] = useState('')
+  const [savingComprehensive, setSavingComprehensive] = useState(false)
+
+  // Comprehensive version history
+  const [comprehensiveVersions, setComprehensiveVersions] = useState([])
+  const [showComprehensiveVersions, setShowComprehensiveVersions] = useState(false)
+  const [loadingComprehensiveVersion, setLoadingComprehensiveVersion] = useState(false)
+
   // Resizable split panel (design tab)
   const [splitWidth, setSplitWidth] = useState(360)
   const isDraggingRef = useRef(false)
@@ -79,6 +97,7 @@ export default function PRDWorkspace() {
 
   const abortRef = useRef(null)
   const designAbortRef = useRef(null)
+  const comprehensiveAbortRef = useRef(null)
   const chatEndRef = useRef(null)
   const prdEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -117,6 +136,9 @@ export default function PRDWorkspace() {
             }
           } catch { /* ignore */ }
         }
+        if (proj.comprehensive_content) {
+          setComprehensiveContent(proj.comprehensive_content)
+        }
       } catch {
         setError('项目加载失败')
       }
@@ -150,6 +172,13 @@ export default function PRDWorkspace() {
       getDesignVersions(id).then(setDesignVersions).catch(() => {})
     }
   }, [showDesignVersions, id])
+
+  // Load comprehensive versions when panel opens
+  useEffect(() => {
+    if (showComprehensiveVersions) {
+      getComprehensiveVersions(id).then(setComprehensiveVersions).catch(() => {})
+    }
+  }, [showComprehensiveVersions, id])
 
   const handleSend = useCallback(() => {
     const text = input.trim()
@@ -482,13 +511,90 @@ export default function PRDWorkspace() {
   const handleComprehensiveExport = async () => {
     if (comprehensiveExporting) return
     setComprehensiveExporting(true)
-    setError('')
+    setComprehensiveError('')
     try {
       await exportComprehensive(id, project?.name || '产品方案', comprehensiveFormat)
     } catch (err) {
-      setError(err.message || '导出失败')
+      setComprehensiveError(err.message || '导出失败')
     } finally {
       setComprehensiveExporting(false)
+    }
+  }
+
+  // Comprehensive AI generation handler
+  const handleComprehensiveGenerate = () => {
+    if (comprehensiveGenerating) return
+    setComprehensiveGenerating(true)
+    setComprehensiveError('')
+    setComprehensiveStatus('')
+    setComprehensiveContent('')
+
+    let tokenBuf = ''
+    const abort = generateComprehensive(id, {
+      onToken(token) {
+        tokenBuf += token
+        setComprehensiveContent(tokenBuf)
+      },
+      onStatus(msg) { setComprehensiveStatus(msg) },
+      onComprehensiveComplete(full) {
+        setComprehensiveContent(full)
+        tokenBuf = full
+      },
+      onDone() {
+        setComprehensiveGenerating(false)
+        setComprehensiveStatus('')
+        getProject(id).then((p) => {
+          if (p) setProject(p)
+        }).catch(() => {})
+      },
+      onError(msg) {
+        setComprehensiveGenerating(false)
+        setComprehensiveError(msg || 'AI 内容整合失败')
+        setComprehensiveStatus('')
+      },
+    })
+    comprehensiveAbortRef.current = abort
+  }
+
+  // Comprehensive editing handlers
+  const handleStartEditComprehensive = () => {
+    setIsEditingComprehensive(true)
+    setEditComprehensiveContent(comprehensiveContent)
+  }
+
+  const handleCancelEditComprehensive = () => {
+    setIsEditingComprehensive(false)
+    setEditComprehensiveContent('')
+  }
+
+  const handleSaveComprehensive = async () => {
+    if (savingComprehensive) return
+    setSavingComprehensive(true)
+    try {
+      await updateComprehensiveContent(id, editComprehensiveContent)
+      setComprehensiveContent(editComprehensiveContent)
+      setIsEditingComprehensive(false)
+      setEditComprehensiveContent('')
+    } catch (err) {
+      setComprehensiveError(err.message || '保存失败')
+    } finally {
+      setSavingComprehensive(false)
+    }
+  }
+
+  // Comprehensive version loading
+  const handleLoadComprehensiveVersion = async (version) => {
+    setLoadingComprehensiveVersion(true)
+    try {
+      const data = await getComprehensiveVersionContent(id, version)
+      setComprehensiveContent(data.content || '')
+      setShowComprehensiveVersions(false)
+      setComprehensiveStatus(`已加载综合方案版本 ${version}`)
+      setTimeout(() => setComprehensiveStatus(''), 2000)
+    } catch {
+      setComprehensiveError('加载综合方案版本失败')
+    } finally {
+      setLoadingComprehensiveVersion(false)
     }
   }
 
@@ -520,6 +626,8 @@ export default function PRDWorkspace() {
 
   // Image config presets
   const RESOLUTION_OPTIONS = [
+    { label: '3840 x 2160 (4K UHD)', value: '3840x2160' },
+    { label: '2560 x 1440 (2K QHD)', value: '2560x1440' },
     { label: '1920 x 1080 (Full HD)', value: '1920x1080' },
     { label: '1440 x 900 (WXGA+)', value: '1440x900' },
     { label: '1366 x 768 (HD)', value: '1366x768' },
@@ -560,6 +668,7 @@ export default function PRDWorkspace() {
     auto_save: '自动保存',
     batch_generated: '批量生成',
     single_page_generated: '单页生成',
+    ai_generated: 'AI 整合',
   }
 
   if (error && !project) {
@@ -603,6 +712,9 @@ export default function PRDWorkspace() {
         )}
         {activeTab === 'design' && (designGenerating || generatingPageId) && (
           <div className="header-status"><span className="status-dot" />{designStatus || '生成中...'}</div>
+        )}
+        {activeTab === 'comprehensive' && comprehensiveGenerating && (
+          <div className="header-status"><span className="status-dot" />{comprehensiveStatus || 'AI 整合中...'}</div>
         )}
       </header>
 
@@ -1078,71 +1190,170 @@ export default function PRDWorkspace() {
               <div className="design-empty">
                 <div className="design-empty-icon">📑</div>
                 <p>请先生成 PRD 文档和产品界面设计</p>
-                <p className="design-empty-hint">综合方案将合并 PRD 文档和产品界面设计图，生成图文并茂的产品方案</p>
+                <p className="design-empty-hint">综合方案将合并 PRD 文档和产品界面设计图，通过 AI 整合生成图文并茂的产品方案</p>
                 <button className="btn-secondary" onClick={() => handleTabChange('prd')}>前往生成 PRD</button>
               </div>
             </div>
           ) : (
-            <div className="comprehensive-content">
-              <div className="comprehensive-card">
-                <h3>综合产品方案导出</h3>
-                <p className="comprehensive-desc">
-                  将 PRD 文档和产品界面设计图合并生成图文并茂的产品方案文档，便于分享和汇报。
-                </p>
-
-                <div className="comprehensive-summary">
-                  <div className="summary-item">
-                    <span className="summary-label">PRD 文档</span>
-                    <span className="summary-value summary-ok">已生成 (v{project?.version})</span>
+            <div className="comprehensive-layout">
+              {/* Left: Content display/edit area */}
+              <section className="comprehensive-main">
+                {/* Toolbar */}
+                <div className="comprehensive-toolbar">
+                  <div className="comprehensive-toolbar-left">
+                    <h3>综合产品方案</h3>
+                    {comprehensiveGenerating && (
+                      <span className="comprehensive-streaming-badge">{comprehensiveStatus || 'AI 整合中...'}</span>
+                    )}
+                    {!comprehensiveGenerating && comprehensiveStatus && (
+                      <span className="comprehensive-streaming-badge">{comprehensiveStatus}</span>
+                    )}
                   </div>
-                  <div className="summary-item">
-                    <span className="summary-label">界面设计</span>
-                    <span className={`summary-value ${designImages.length > 0 ? 'summary-ok' : 'summary-warn'}`}>
-                      {designImages.length > 0 ? `${designImages.length} 张设计图` : '未生成'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="comprehensive-format">
-                  <label className="form-label">导出格式</label>
-                  <div className="format-options">
-                    <label className={`format-option ${comprehensiveFormat === 'docx' ? 'format-active' : ''}`}>
-                      <input type="radio" name="format" value="docx" checked={comprehensiveFormat === 'docx'} onChange={() => setComprehensiveFormat('docx')} />
-                      <div className="format-info">
-                        <span className="format-icon">📝</span>
-                        <span className="format-name">Word (.docx)</span>
-                        <span className="format-desc">适合编辑和打印</span>
-                      </div>
-                    </label>
-                    <label className={`format-option ${comprehensiveFormat === 'pptx' ? 'format-active' : ''}`}>
-                      <input type="radio" name="format" value="pptx" checked={comprehensiveFormat === 'pptx'} onChange={() => setComprehensiveFormat('pptx')} />
-                      <div className="format-info">
-                        <span className="format-icon">📊</span>
-                        <span className="format-name">PPT (.pptx)</span>
-                        <span className="format-desc">适合演示和汇报</span>
-                      </div>
-                    </label>
-                    <label className={`format-option ${comprehensiveFormat === 'pdf' ? 'format-active' : ''}`}>
-                      <input type="radio" name="format" value="pdf" checked={comprehensiveFormat === 'pdf'} onChange={() => setComprehensiveFormat('pdf')} />
-                      <div className="format-info">
-                        <span className="format-icon">📄</span>
-                        <span className="format-name">PDF</span>
-                        <span className="format-desc">适合分享和归档</span>
-                      </div>
-                    </label>
+                  <div className="comprehensive-toolbar-actions">
+                    {comprehensiveContent && !isEditingComprehensive && (
+                      <>
+                        <button className="btn-secondary btn-sm" onClick={handleStartEditComprehensive}>编辑</button>
+                        <button className="btn-secondary btn-sm" onClick={() => setShowComprehensiveVersions(!showComprehensiveVersions)}>
+                          历史版本
+                        </button>
+                      </>
+                    )}
+                    {isEditingComprehensive && (
+                      <>
+                        <button className="btn-secondary btn-sm" onClick={handleCancelEditComprehensive} disabled={savingComprehensive}>取消</button>
+                        <button className="btn-primary btn-sm" onClick={handleSaveComprehensive} disabled={savingComprehensive}>
+                          {savingComprehensive ? '保存中...' : '保存'}
+                        </button>
+                      </>
+                    )}
+                    <button
+                      className="btn-primary btn-sm"
+                      onClick={handleComprehensiveGenerate}
+                      disabled={comprehensiveGenerating}
+                    >
+                      {comprehensiveGenerating ? 'AI 整合中...' : comprehensiveContent ? '重新 AI 整合' : 'AI 内容整合'}
+                    </button>
                   </div>
                 </div>
 
-                {error && <div className="chat-error">{error}</div>}
+                {/* Version history dropdown */}
+                {showComprehensiveVersions && (
+                  <div className="version-dropdown">
+                    <div className="version-dropdown-header">
+                      <span>综合方案历史版本</span>
+                      <button className="btn-text" onClick={() => setShowComprehensiveVersions(false)}>关闭</button>
+                    </div>
+                    {comprehensiveVersions.length === 0 ? (
+                      <div className="version-empty">暂无历史版本</div>
+                    ) : (
+                      <div className="version-list">
+                        {comprehensiveVersions.map((v) => (
+                          <div className="version-item" key={v.version}>
+                            <div className="version-info">
+                              <span className="version-num">v{v.version}</span>
+                              <span className="version-action">{VERSION_ACTION_LABELS[v.action] || v.action}</span>
+                              <span className="version-time">{formatVersionTime(v.timestamp)}</span>
+                            </div>
+                            <button
+                              className="btn-text btn-sm"
+                              onClick={() => handleLoadComprehensiveVersion(v.version)}
+                              disabled={loadingComprehensiveVersion}
+                            >
+                              加载
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                <button
-                  className="btn-primary btn-full btn-large"
-                  onClick={handleComprehensiveExport}
-                  disabled={comprehensiveExporting}
-                >
-                  {comprehensiveExporting ? '正在生成...' : '生成并下载综合方案'}
-                </button>
-              </div>
+                {/* Content area */}
+                <div className="comprehensive-content-area">
+                  {!comprehensiveContent && !comprehensiveGenerating ? (
+                    <div className="comprehensive-empty-content">
+                      <p>点击「AI 内容整合」按钮，通过大语言模型将 PRD 文档和产品界面设计信息整合为一份综合产品方案。</p>
+                    </div>
+                  ) : isEditingComprehensive ? (
+                    <textarea
+                      className="comprehensive-editor"
+                      value={editComprehensiveContent}
+                      onChange={(e) => setEditComprehensiveContent(e.target.value)}
+                    />
+                  ) : (
+                    <div className="comprehensive-preview prd-markdown">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{comprehensiveContent}</ReactMarkdown>
+                    </div>
+                  )}
+                </div>
+
+                {comprehensiveError && <div className="chat-error comprehensive-error-bar">{comprehensiveError}</div>}
+              </section>
+
+              {/* Right: Summary & Export panel */}
+              <aside className="comprehensive-sidebar">
+                <div className="comprehensive-card">
+                  <h4>方案状态</h4>
+                  <div className="comprehensive-summary">
+                    <div className="summary-item">
+                      <span className="summary-label">PRD 文档</span>
+                      <span className="summary-value summary-ok">已生成 (v{project?.version})</span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">界面设计</span>
+                      <span className={`summary-value ${designImages.length > 0 ? 'summary-ok' : 'summary-warn'}`}>
+                        {designImages.length > 0 ? `${designImages.length} 张设计图` : '未生成'}
+                      </span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">AI 整合</span>
+                      <span className={`summary-value ${comprehensiveContent ? 'summary-ok' : 'summary-warn'}`}>
+                        {comprehensiveContent ? '已完成' : '待整合'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="comprehensive-card">
+                  <h4>导出方案</h4>
+                  <div className="comprehensive-format">
+                    <div className="format-options format-options-vertical">
+                      <label className={`format-option ${comprehensiveFormat === 'docx' ? 'format-active' : ''}`}>
+                        <input type="radio" name="format" value="docx" checked={comprehensiveFormat === 'docx'} onChange={() => setComprehensiveFormat('docx')} />
+                        <div className="format-info">
+                          <span className="format-icon">📝</span>
+                          <span className="format-name">Word (.docx)</span>
+                          <span className="format-desc">适合编辑和打印</span>
+                        </div>
+                      </label>
+                      <label className={`format-option ${comprehensiveFormat === 'pptx' ? 'format-active' : ''}`}>
+                        <input type="radio" name="format" value="pptx" checked={comprehensiveFormat === 'pptx'} onChange={() => setComprehensiveFormat('pptx')} />
+                        <div className="format-info">
+                          <span className="format-icon">📊</span>
+                          <span className="format-name">PPT (.pptx)</span>
+                          <span className="format-desc">适合演示和汇报</span>
+                        </div>
+                      </label>
+                      <label className={`format-option ${comprehensiveFormat === 'pdf' ? 'format-active' : ''}`}>
+                        <input type="radio" name="format" value="pdf" checked={comprehensiveFormat === 'pdf'} onChange={() => setComprehensiveFormat('pdf')} />
+                        <div className="format-info">
+                          <span className="format-icon">📄</span>
+                          <span className="format-name">PDF</span>
+                          <span className="format-desc">适合分享和归档</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn-primary btn-full"
+                    onClick={handleComprehensiveExport}
+                    disabled={comprehensiveExporting}
+                  >
+                    {comprehensiveExporting ? '正在导出...' : '导出综合方案'}
+                  </button>
+                </div>
+              </aside>
             </div>
           )}
         </div>

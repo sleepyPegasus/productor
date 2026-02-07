@@ -87,6 +87,29 @@ export async function getDesignVersionImages(projectId, version) {
   return res.json();
 }
 
+// Comprehensive solution version history
+export async function getComprehensiveVersions(projectId) {
+  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions`);
+  if (!res.ok) throw new Error('获取综合方案版本历史失败');
+  return res.json();
+}
+
+export async function getComprehensiveVersionContent(projectId, version) {
+  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions/${version}`);
+  if (!res.ok) throw new Error('获取综合方案版本内容失败');
+  return res.json();
+}
+
+export async function updateComprehensiveContent(projectId, content) {
+  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error('保存综合方案内容失败');
+  return res.json();
+}
+
 /**
  * Start PRD generation via SSE stream.
  * @param {string} projectId
@@ -353,6 +376,83 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
                     break;
                   case 'done':
                     callbacks.onDone?.(event.data);
+                    break;
+                  case 'error':
+                    callbacks.onError?.(event.data);
+                    break;
+                }
+              } catch {
+                // skip malformed line
+              }
+            }
+            read();
+          })
+          .catch((err) => {
+            if (err.name !== 'AbortError') {
+              callbacks.onError?.(err.message);
+            }
+          });
+      }
+      read();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError?.(err.message);
+      }
+    });
+
+  return () => controller.abort();
+}
+
+/**
+ * Generate AI-integrated comprehensive product solution via SSE stream.
+ * @param {string} projectId
+ * @param {object} callbacks - { onToken, onStatus, onComprehensiveComplete, onDone, onError }
+ * @returns {function} abort function
+ */
+export function generateComprehensive(projectId, callbacks) {
+  const controller = new AbortController();
+
+  fetch(`${BASE}/projects/${projectId}/generate-comprehensive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('综合方案生成请求失败');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function read() {
+        reader
+          .read()
+          .then(({ done, value }) => {
+            if (done) {
+              callbacks.onDone?.();
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.replace(/^data:\s*/, '').trim();
+              if (!trimmed) continue;
+              try {
+                const event = JSON.parse(trimmed);
+                switch (event.type) {
+                  case 'token':
+                    callbacks.onToken?.(event.data);
+                    break;
+                  case 'status':
+                    callbacks.onStatus?.(event.data);
+                    break;
+                  case 'comprehensive_complete':
+                    callbacks.onComprehensiveComplete?.(event.data);
+                    break;
+                  case 'done':
+                    callbacks.onDone?.();
                     break;
                   case 'error':
                     callbacks.onError?.(event.data);

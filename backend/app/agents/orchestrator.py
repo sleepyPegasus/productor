@@ -534,3 +534,112 @@ async def run_revision_pipeline_stream(
             "prd_content": prd_content,
         }, ensure_ascii=False),
     }) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Comprehensive Solution AI Integration
+# ---------------------------------------------------------------------------
+
+COMPREHENSIVE_SYSTEM_PROMPT = """你是一位资深产品经理和文档专家。你的任务是将 PRD 文档和产品界面设计信息整合成一份结构清晰、内容完整的综合产品方案。
+
+整合要求：
+1. 保留 PRD 的核心内容，但重新组织结构使其更适合作为产品方案呈现
+2. 将界面设计描述自然地融入到对应的功能模块中
+3. 对内容进行提炼和润色，使表述更加专业和简洁
+4. 确保方案具有完整的逻辑脉络：背景→目标→方案→实现
+5. 输出 Markdown 格式
+"""
+
+COMPREHENSIVE_USER_TEMPLATE = """请将以下 PRD 文档和产品界面设计信息整合为一份综合产品方案。
+
+## PRD 文档内容
+
+{prd_content}
+
+## 产品界面设计信息
+
+{design_info}
+
+请输出整合后的综合产品方案（Markdown 格式）。方案应当包含但不限于：
+- 产品概述与背景
+- 核心目标与价值
+- 功能模块详述（结合界面设计说明）
+- 信息架构与页面流转
+- 技术方案概要
+- 实施路线图与优先级
+
+注意：直接输出方案内容，不要包含额外的解释说明。"""
+
+
+async def consolidate_comprehensive_stream(
+    prd_content: str,
+    design_images: list,
+    pages_plan: Optional[dict],
+    chat_model: str = None,
+) -> AsyncGenerator[str, None]:
+    """Use LLM to consolidate PRD and design info into an integrated solution.
+
+    Yields JSON-line events: status, token, comprehensive_complete, done, error
+    """
+    if not settings.OPENROUTER_API_KEY:
+        yield json.dumps({
+            "type": "error",
+            "data": "未配置 OpenRouter API Key（OPENROUTER_API_KEY），无法进行 AI 内容整合",
+        }) + "\n"
+        return
+
+    yield json.dumps({"type": "status", "data": "正在通过 AI 整合综合产品方案..."}) + "\n"
+
+    # Build design info text
+    design_info_parts = []
+    page_info = {}
+    if pages_plan:
+        pages = pages_plan.get("pages", []) if isinstance(pages_plan, dict) else pages_plan
+        for p in pages:
+            page_info[p.get("id", "")] = p
+
+    for img_data in design_images:
+        page_name = img_data.get("page_name", "页面")
+        page_id = img_data.get("page_id", "")
+        info = page_info.get(page_id, {})
+        part = f"### {page_name}\n"
+        if info.get("description"):
+            part += f"- 页面描述：{info['description']}\n"
+        if info.get("keyElements"):
+            part += f"- 关键元素：{', '.join(info['keyElements'])}\n"
+        if info.get("layoutDescription"):
+            part += f"- 布局说明：{info['layoutDescription']}\n"
+        part += f"- 已生成界面设计图\n"
+        design_info_parts.append(part)
+
+    design_info = "\n".join(design_info_parts) if design_info_parts else "暂无界面设计信息。"
+
+    user_content = COMPREHENSIVE_USER_TEMPLATE.format(
+        prd_content=prd_content,
+        design_info=design_info,
+    )
+
+    try:
+        llm = get_streaming_llm(model=chat_model, temperature=0.5, max_tokens=16384)
+        messages = [
+            SystemMessage(content=COMPREHENSIVE_SYSTEM_PROMPT),
+            HumanMessage(content=user_content),
+        ]
+
+        tokens = []
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            if token:
+                tokens.append(token)
+                yield json.dumps({"type": "token", "data": token}) + "\n"
+
+        full_content = "".join(tokens)
+        yield json.dumps({"type": "comprehensive_complete", "data": full_content}) + "\n"
+        yield json.dumps({"type": "done", "data": "综合产品方案整合完成"}) + "\n"
+
+    except Exception as e:
+        logger.exception("Comprehensive consolidation failed")
+        yield json.dumps({
+            "type": "error",
+            "data": f"AI 内容整合失败: {str(e)}",
+        }) + "\n"

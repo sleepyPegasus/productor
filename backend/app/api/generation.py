@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 from app.agents.orchestrator import (
+    consolidate_comprehensive_stream,
     run_full_pipeline_stream,
     run_revision_pipeline_stream,
     run_design_generation_stream,
@@ -20,6 +21,7 @@ from app.db.database import (
     append_chat_message,
     append_version_history,
     get_project,
+    save_comprehensive_version,
     save_design_version,
     save_prd_version,
     update_project,
@@ -375,6 +377,82 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
                     design_images=json.dumps(updated, ensure_ascii=False),
                 )
                 save_design_version(project_id, updated, "single_page_generated")
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive Solution AI Integration
+# ---------------------------------------------------------------------------
+
+@router.post("/{project_id}/generate-comprehensive")
+async def api_generate_comprehensive(project_id: str):
+    """Generate AI-integrated comprehensive product solution via SSE stream.
+
+    Streams SSE events:
+      - status: progress messages
+      - token: individual content tokens
+      - comprehensive_complete: full integrated content
+      - done: generation finished
+      - error: error messages
+    """
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    prd_content = project.get("prd_content", "")
+    if not prd_content:
+        raise HTTPException(status_code=400, detail="PRD 内容为空，请先生成 PRD")
+
+    chat_model = project.get("chat_model", "") or None
+
+    design_images = []
+    if project.get("design_images"):
+        try:
+            design_images = json.loads(project["design_images"])
+        except json.JSONDecodeError:
+            pass
+
+    pages_plan = None
+    if project.get("pages_plan"):
+        try:
+            pages_plan = json.loads(project["pages_plan"])
+        except json.JSONDecodeError:
+            pass
+
+    async def event_stream():
+        comprehensive_content = ""
+        try:
+            async for event_str in consolidate_comprehensive_stream(
+                prd_content=prd_content,
+                design_images=design_images,
+                pages_plan=pages_plan,
+                chat_model=chat_model,
+            ):
+                event = json.loads(event_str)
+                if event["type"] == "comprehensive_complete":
+                    comprehensive_content = event["data"]
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM auth error during comprehensive generation: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+        except Exception as e:
+            logger.error("Error during comprehensive generation: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'AI 内容整合失败: {str(e)}'})}\n\n"
+        finally:
+            if comprehensive_content:
+                save_comprehensive_version(project_id, comprehensive_content, "ai_generated")
 
     return StreamingResponse(
         event_stream(),

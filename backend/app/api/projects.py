@@ -7,13 +7,17 @@ from app.db.database import (
     create_project,
     delete_project,
     get_chat_history,
+    get_comprehensive_version_content,
+    get_comprehensive_versions,
     get_design_version_images,
     get_design_versions,
     get_prd_version_content,
     get_prd_versions,
     get_project,
     list_projects,
+    save_comprehensive_version,
     save_prd_version,
+    update_comprehensive_content,
     update_project,
 )
 from app.models.schemas import (
@@ -138,3 +142,41 @@ async def api_get_design_version_images(project_id: str, version: int):
     if images is None:
         raise HTTPException(status_code=404, detail="版本不存在")
     return {"version": version, "images": images}
+
+
+# Comprehensive solution versioning
+@router.get("/{project_id}/comprehensive-versions")
+async def api_get_comprehensive_versions(project_id: str):
+    """Get list of comprehensive solution version snapshots."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return get_comprehensive_versions(project_id)
+
+
+@router.get("/{project_id}/comprehensive-versions/{version}")
+async def api_get_comprehensive_version_content(project_id: str, version: int):
+    """Get comprehensive solution content for a specific version."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    content = get_comprehensive_version_content(project_id, version)
+    if content is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    return {"version": version, "content": content}
+
+
+@router.put("/{project_id}/comprehensive-content")
+async def api_update_comprehensive_content(project_id: str, body: PrdContentUpdate):
+    """Update comprehensive solution content (manual edit) and save version."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    # Save current content as auto_save before updating
+    current = project.get("comprehensive_content", "")
+    if current:
+        save_comprehensive_version(project_id, current, "auto_save")
+    # Save new content
+    update_comprehensive_content(project_id, body.content)
+    save_comprehensive_version(project_id, body.content, "manual_edit")
+    return {"detail": "综合方案内容已保存"}
