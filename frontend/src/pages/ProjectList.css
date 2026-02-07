@@ -263,6 +263,48 @@
   color: #b45309;
 }
 
+/* Global image configuration section */
+.image-config-section {
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.image-config-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.image-config-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.image-config-section .model-select-row {
+  margin-bottom: 0;
+}
+
+.image-config-section .form-select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+
+.image-config-section .form-select:focus {
+  border-color: var(--primary);
+}
+
 /* Extra wide modal for model selection */
 .modal.modal-extra-wide {
   max-width: 720px;

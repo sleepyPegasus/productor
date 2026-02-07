@@ -1268,6 +1268,10 @@
 .version-item:hover {
   background: var(--primary-light);
 }
+.version-item-active {
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+}
 
 .version-badge {
   display: inline-flex;
@@ -1627,6 +1631,23 @@
 }
 .btn-text:hover {
   text-decoration: underline;
+}
+
+/* Comprehensive version selector */
+.comprehensive-version-selector {
+  margin-bottom: 0;
+}
+.comprehensive-version-selector .form-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  outline: none;
+}
+.comprehensive-version-selector .form-select:focus {
+  border-color: var(--primary);
 }
 
 /* -------- Error page -------- */

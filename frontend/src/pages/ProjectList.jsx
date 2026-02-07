@@ -4,6 +4,29 @@ import { fetchProjects, createProject, updateProject, deleteProject, exportPRDAs
 import SearchableSelect from '../components/SearchableSelect'
 import './ProjectList.css'
 
+const RESOLUTION_OPTIONS = [
+  { label: '3840 x 2160 (4K UHD)', value: '3840x2160' },
+  { label: '2560 x 1440 (2K QHD)', value: '2560x1440' },
+  { label: '1920 x 1080 (Full HD)', value: '1920x1080' },
+  { label: '1440 x 900 (WXGA+)', value: '1440x900' },
+  { label: '1366 x 768 (HD)', value: '1366x768' },
+  { label: '1280 x 720 (HD 720p)', value: '1280x720' },
+  { label: '1024 x 768 (XGA)', value: '1024x768' },
+  { label: '768 x 1024 (iPad)', value: '768x1024' },
+  { label: '390 x 844 (iPhone 14)', value: '390x844' },
+  { label: '375 x 812 (iPhone X)', value: '375x812' },
+  { label: '414 x 896 (iPhone 11)', value: '414x896' },
+]
+
+const RATIO_OPTIONS = [
+  { label: '16:9 (宽屏)', value: '16:9' },
+  { label: '4:3 (标准)', value: '4:3' },
+  { label: '3:2 (经典)', value: '3:2' },
+  { label: '1:1 (正方形)', value: '1:1' },
+  { label: '9:16 (手机竖屏)', value: '9:16' },
+  { label: '3:4 (平板竖屏)', value: '3:4' },
+]
+
 const STATUS_LABELS = {
   created: '新建',
   analyzing: '分析中',
@@ -34,6 +57,8 @@ export default function ProjectList() {
   const [desc, setDesc] = useState('')
   const [chatModel, setChatModel] = useState('')
   const [imageModel, setImageModel] = useState('')
+  const [defaultImageResolution, setDefaultImageResolution] = useState('')
+  const [defaultImageRatio, setDefaultImageRatio] = useState('')
   const [chatModels, setChatModels] = useState([])
   const [imageModels, setImageModels] = useState([])
   const [loading, setLoading] = useState(false)
@@ -77,6 +102,8 @@ export default function ProjectList() {
     // Reset to default models
     if (chatModels.length > 0) setChatModel(chatModels[0].id)
     if (imageModels.length > 0) setImageModel(imageModels[0].id)
+    setDefaultImageResolution('')
+    setDefaultImageRatio('')
     setShowModal(true)
   }
 
@@ -87,6 +114,8 @@ export default function ProjectList() {
     setDesc(project.description || '')
     setChatModel(project.chat_model || '')
     setImageModel(project.image_model || '')
+    setDefaultImageResolution(project.default_image_resolution || '')
+    setDefaultImageRatio(project.default_image_ratio || '')
     setShowModal(true)
   }
 
@@ -94,7 +123,7 @@ export default function ProjectList() {
     if (!name.trim()) return
     setLoading(true)
     try {
-      const project = await createProject(name.trim(), desc.trim(), chatModel, imageModel)
+      const project = await createProject(name.trim(), desc.trim(), chatModel, imageModel, defaultImageResolution, defaultImageRatio)
       setShowModal(false)
       setName('')
       setDesc('')
@@ -115,6 +144,8 @@ export default function ProjectList() {
         description: desc.trim(),
         chat_model: chatModel,
         image_model: imageModel,
+        default_image_resolution: defaultImageResolution,
+        default_image_ratio: defaultImageRatio,
       })
       setShowModal(false)
       setEditingProject(null)
@@ -353,6 +384,28 @@ export default function ProjectList() {
                 />
               </div>
             </div>
+            {imageModel && (
+              <div className="image-config-section">
+                <div className="image-config-title">全局图片配置</div>
+                <div className="image-config-hint">设置产品项目的默认图片分辨率和比例，生成设计图时将使用这些默认值</div>
+                <div className="model-select-row">
+                  <div className="model-select-label">
+                    默认图片分辨率
+                    <select className="form-select" value={defaultImageResolution} onChange={(e) => setDefaultImageResolution(e.target.value)}>
+                      <option value="">不限</option>
+                      {RESOLUTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="model-select-label">
+                    默认图片比例
+                    <select className="form-select" value={defaultImageRatio} onChange={(e) => setDefaultImageRatio(e.target.value)}>
+                      <option value="">不限</option>
+                      {RATIO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="modal-actions">
               <button className="btn-secondary" onClick={handleCloseModal}>
                 取消

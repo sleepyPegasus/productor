@@ -6,11 +6,18 @@ export async function fetchProjects() {
   return res.json();
 }
 
-export async function createProject(name, description = '', chatModel = '', imageModel = '') {
+export async function createProject(name, description = '', chatModel = '', imageModel = '', defaultImageResolution = '', defaultImageRatio = '') {
   const res = await fetch(`${BASE}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description, chat_model: chatModel, image_model: imageModel }),
+    body: JSON.stringify({
+      name,
+      description,
+      chat_model: chatModel,
+      image_model: imageModel,
+      default_image_resolution: defaultImageResolution,
+      default_image_ratio: defaultImageRatio,
+    }),
   });
   if (!res.ok) throw new Error('创建项目失败');
   return res.json();
@@ -337,6 +344,7 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
   const body = { page_id: pageId }
   if (imageConfig.resolution) body.image_resolution = imageConfig.resolution
   if (imageConfig.ratio) body.image_ratio = imageConfig.ratio
+  if (imageConfig.extraRequirements) body.image_extra_requirements = imageConfig.extraRequirements
 
   fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
     method: 'POST',
