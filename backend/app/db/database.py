@@ -50,12 +50,14 @@ def init_db():
         ("design_images", "'[]'"),
         ("chat_model", "''"),
         ("image_model", "''"),
+        ("comprehensive_model", "''"),
         ("prd_versions", "'[]'"),
         ("design_versions", "'[]'"),
         ("comprehensive_content", "''"),
         ("comprehensive_versions", "'[]'"),
         ("default_image_resolution", "''"),
         ("default_image_ratio", "''"),
+        ("category", "'active'"),
     ]:
         try:
             conn.execute(f"SELECT {col} FROM projects LIMIT 1")
@@ -74,6 +76,7 @@ def create_project(
     description: str = "",
     chat_model: str = "",
     image_model: str = "",
+    comprehensive_model: str = "",
     default_image_resolution: str = "",
     default_image_ratio: str = "",
 ) -> dict:
@@ -82,12 +85,13 @@ def create_project(
     conn = get_connection()
     conn.execute(
         """INSERT INTO projects (id, name, description, status, version,
-           chat_model, image_model, default_image_resolution, default_image_ratio,
+           chat_model, image_model, comprehensive_model,
+           default_image_resolution, default_image_ratio, category,
            raw_requirement, structured_requirement, pages_plan, prd_content,
            design_images, history, chat_history, prd_versions, design_versions,
            created_at, updated_at)
-           VALUES (?, ?, ?, 'created', 0, ?, ?, ?, ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
-        (project_id, name, description, chat_model, image_model,
+           VALUES (?, ?, ?, 'created', 0, ?, ?, ?, ?, ?, 'active', '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
+        (project_id, name, description, chat_model, image_model, comprehensive_model,
          default_image_resolution, default_image_ratio, now, now),
     )
     conn.commit()
@@ -96,14 +100,35 @@ def create_project(
     return dict(row)
 
 
-def list_projects() -> list[dict]:
+def list_projects(
+    category: str = "active",
+    search: str = "",
+) -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT id, name, description, status, version, chat_model, image_model, "
+    conditions = []
+    params = []
+
+    if category:
+        conditions.append("COALESCE(category, 'active') = ?")
+        params.append(category)
+
+    if search:
+        conditions.append("(name LIKE ? OR description LIKE ?)")
+        like_val = f"%{search}%"
+        params.extend([like_val, like_val])
+
+    where = ""
+    if conditions:
+        where = "WHERE " + " AND ".join(conditions)
+
+    query = (
+        "SELECT id, name, description, status, version, category, "
+        "chat_model, image_model, comprehensive_model, "
         "default_image_resolution, default_image_ratio, "
         "prd_content, design_images, created_at, updated_at "
-        "FROM projects ORDER BY updated_at DESC"
-    ).fetchall()
+        f"FROM projects {where} ORDER BY updated_at DESC"
+    )
+    rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -128,6 +153,40 @@ def update_project(project_id: str, **kwargs) -> Optional[dict]:
 
 
 def delete_project(project_id: str) -> bool:
+    """Soft delete: set category to 'deleted'."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "UPDATE projects SET category = 'deleted', updated_at = ? WHERE id = ?",
+        (_now(), project_id),
+    )
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def archive_project(project_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.execute(
+        "UPDATE projects SET category = 'archived', updated_at = ? WHERE id = ?",
+        (_now(), project_id),
+    )
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def restore_project(project_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.execute(
+        "UPDATE projects SET category = 'active', updated_at = ? WHERE id = ?",
+        (_now(), project_id),
+    )
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def permanently_delete_project(project_id: str) -> bool:
     conn = get_connection()
     cursor = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     conn.commit()

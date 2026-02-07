@@ -998,6 +998,18 @@
   cursor: not-allowed;
 }
 
+.slide-download-btn {
+  background: var(--primary-light, #eef2ff);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-size: 13px;
+  padding: 8px 16px;
+}
+.slide-download-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+}
+
 .slide-counter {
   font-size: 14px;
   color: var(--text-secondary);
@@ -1069,6 +1081,24 @@
   font-size: 16px;
   font-weight: 600;
   margin: 0;
+  flex: 1;
+}
+
+.btn-download-design {
+  margin-left: auto;
+  background: var(--primary-light, #eef2ff);
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  padding: 5px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-download-design:hover {
+  background: var(--primary);
+  color: #fff;
 }
 
 .btn-back-small {

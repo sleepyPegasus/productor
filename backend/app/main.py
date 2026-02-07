@@ -18,8 +18,28 @@ from app.models.schemas import ModelsResponse
 logger = logging.getLogger(__name__)
 
 # Cache for OpenRouter models
-_models_cache: dict = {"chat_models": [], "image_models": [], "timestamp": 0}
+_models_cache: dict = {"chat_models": [], "image_models": [], "multimodal_models": [], "timestamp": 0}
 _CACHE_TTL = 300  # 5 minutes
+
+# Known multimodal model patterns (support image input for text output)
+_MULTIMODAL_PATTERNS = [
+    "gpt-4o", "gpt-4-turbo", "gpt-4-vision",
+    "claude-sonnet", "claude-opus", "claude-haiku",
+    "gemini-2", "gemini-3", "gemini-pro",
+    "qwen-vl", "qwen2-vl",
+    "llava", "internvl",
+]
+
+
+def _is_multimodal(model_id: str, model_info: dict) -> bool:
+    """Check if a model supports multimodal input (image+text -> text)."""
+    modality = model_info.get("architecture", {}).get("modality", "")
+    # Models that accept image input but produce text output
+    if "image" in modality.split("->")[0] and "image" not in modality.split("->")[-1]:
+        return True
+    # Fallback: check known patterns
+    model_lower = model_id.lower()
+    return any(pattern in model_lower for pattern in _MULTIMODAL_PATTERNS)
 
 
 async def _fetch_openrouter_models() -> dict:
@@ -43,6 +63,7 @@ async def _fetch_openrouter_models() -> dict:
 
         chat_models = []
         image_models = []
+        multimodal_models = []
 
         for model in data.get("data", []):
             model_id = model.get("id", "")
@@ -56,9 +77,13 @@ async def _fetch_openrouter_models() -> dict:
             else:
                 chat_models.append(entry)
 
+            if _is_multimodal(model_id, model):
+                multimodal_models.append(entry)
+
         if chat_models or image_models:
             _models_cache["chat_models"] = chat_models
             _models_cache["image_models"] = image_models
+            _models_cache["multimodal_models"] = multimodal_models
             _models_cache["timestamp"] = now
             return _models_cache
 
@@ -70,6 +95,7 @@ async def _fetch_openrouter_models() -> dict:
         return {
             "chat_models": settings.CHAT_MODELS,
             "image_models": settings.IMAGE_MODELS,
+            "multimodal_models": settings.MULTIMODAL_MODELS,
         }
     return _models_cache
 
@@ -107,9 +133,10 @@ async def health():
 
 @app.get("/api/models", response_model=ModelsResponse)
 async def get_available_models():
-    """Return available chat and image models fetched from OpenRouter."""
+    """Return available chat, image, and multimodal models fetched from OpenRouter."""
     models = await _fetch_openrouter_models()
     return {
         "chat_models": models["chat_models"],
         "image_models": models["image_models"],
+        "multimodal_models": models.get("multimodal_models", []),
     }

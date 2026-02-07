@@ -1,12 +1,15 @@
 const BASE = '/api';
 
-export async function fetchProjects() {
-  const res = await fetch(`${BASE}/projects`);
+export async function fetchProjects(category = 'active', search = '') {
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  if (search) params.set('search', search);
+  const res = await fetch(`${BASE}/projects?${params.toString()}`);
   if (!res.ok) throw new Error('获取项目列表失败');
   return res.json();
 }
 
-export async function createProject(name, description = '', chatModel = '', imageModel = '', defaultImageResolution = '', defaultImageRatio = '') {
+export async function createProject(name, description = '', chatModel = '', imageModel = '', comprehensiveModel = '', defaultImageResolution = '', defaultImageRatio = '') {
   const res = await fetch(`${BASE}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -15,11 +18,30 @@ export async function createProject(name, description = '', chatModel = '', imag
       description,
       chat_model: chatModel,
       image_model: imageModel,
+      comprehensive_model: comprehensiveModel,
       default_image_resolution: defaultImageResolution,
       default_image_ratio: defaultImageRatio,
     }),
   });
   if (!res.ok) throw new Error('创建项目失败');
+  return res.json();
+}
+
+export async function archiveProject(id) {
+  const res = await fetch(`${BASE}/projects/${id}/archive`, { method: 'POST' });
+  if (!res.ok) throw new Error('归档失败');
+  return res.json();
+}
+
+export async function restoreProject(id) {
+  const res = await fetch(`${BASE}/projects/${id}/restore`, { method: 'POST' });
+  if (!res.ok) throw new Error('恢复失败');
+  return res.json();
+}
+
+export async function permanentlyDeleteProject(id) {
+  const res = await fetch(`${BASE}/projects/${id}/permanent`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('永久删除失败');
   return res.json();
 }
 

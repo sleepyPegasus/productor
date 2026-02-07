@@ -415,7 +415,8 @@ async def api_generate_comprehensive(project_id: str):
     if not prd_content:
         raise HTTPException(status_code=400, detail="PRD 内容为空，请先生成 PRD")
 
-    chat_model = project.get("chat_model", "") or None
+    # Use comprehensive_model if set, otherwise fall back to chat_model
+    comprehensive_model = project.get("comprehensive_model", "") or project.get("chat_model", "") or None
 
     design_images = []
     if project.get("design_images"):
@@ -438,7 +439,7 @@ async def api_generate_comprehensive(project_id: str):
                 prd_content=prd_content,
                 design_images=design_images,
                 pages_plan=pages_plan,
-                chat_model=chat_model,
+                chat_model=comprehensive_model,
             ):
                 event = json.loads(event_str)
                 if event["type"] == "comprehensive_complete":
