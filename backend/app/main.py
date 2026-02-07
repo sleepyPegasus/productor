@@ -1,7 +1,10 @@
 """FastAPI application entry point."""
 
+import logging
+import time
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +14,64 @@ from app.api.projects import router as projects_router
 from app.config import settings
 from app.db.database import init_db
 from app.models.schemas import ModelsResponse
+
+logger = logging.getLogger(__name__)
+
+# Cache for OpenRouter models
+_models_cache: dict = {"chat_models": [], "image_models": [], "timestamp": 0}
+_CACHE_TTL = 300  # 5 minutes
+
+
+async def _fetch_openrouter_models() -> dict:
+    """Fetch models from OpenRouter API and categorize them."""
+    now = time.time()
+    if _models_cache["timestamp"] and now - _models_cache["timestamp"] < _CACHE_TTL:
+        return _models_cache
+
+    try:
+        headers = {}
+        if settings.OPENROUTER_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.OPENROUTER_API_KEY}"
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{settings.OPENROUTER_BASE_URL}/models",
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        chat_models = []
+        image_models = []
+
+        for model in data.get("data", []):
+            model_id = model.get("id", "")
+            model_name = model.get("name", model_id)
+            modality = model.get("architecture", {}).get("modality", "")
+
+            entry = {"id": model_id, "name": model_name}
+
+            if "image" in modality.split("->")[-1]:
+                image_models.append(entry)
+            else:
+                chat_models.append(entry)
+
+        if chat_models or image_models:
+            _models_cache["chat_models"] = chat_models
+            _models_cache["image_models"] = image_models
+            _models_cache["timestamp"] = now
+            return _models_cache
+
+    except Exception as e:
+        logger.warning("Failed to fetch models from OpenRouter: %s", e)
+
+    # Fallback to hardcoded models if cache is empty
+    if not _models_cache["chat_models"] and not _models_cache["image_models"]:
+        return {
+            "chat_models": settings.CHAT_MODELS,
+            "image_models": settings.IMAGE_MODELS,
+        }
+    return _models_cache
 
 
 @asynccontextmanager
@@ -46,8 +107,9 @@ async def health():
 
 @app.get("/api/models", response_model=ModelsResponse)
 async def get_available_models():
-    """Return available chat and image models for project creation."""
+    """Return available chat and image models fetched from OpenRouter."""
+    models = await _fetch_openrouter_models()
     return {
-        "chat_models": settings.CHAT_MODELS,
-        "image_models": settings.IMAGE_MODELS,
+        "chat_models": models["chat_models"],
+        "image_models": models["image_models"],
     }
