@@ -1944,6 +1944,126 @@
   line-height: 1.5;
 }
 
+/* -------- PRD Section Selection -------- */
+.prd-section-heading {
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  border-left: 3px solid transparent;
+  padding-left: 8px;
+  margin-left: -11px;
+  border-radius: 2px;
+}
+.prd-section-heading:hover {
+  background: var(--primary-light);
+  border-left-color: var(--primary);
+}
+.prd-section-heading.prd-section-heading-selected {
+  background: #eef2ff;
+  border-left-color: var(--primary);
+}
+
+.section-select-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  margin-left: 8px;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.prd-section-heading:hover .section-select-icon {
+  opacity: 0.5;
+}
+.prd-section-heading-selected .section-select-icon {
+  opacity: 1;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* -------- Section Selection Hint in Chat Input -------- */
+.section-selection-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.section-hint-icon {
+  font-size: 14px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.section-hint-text {
+  flex: 1;
+  color: var(--primary);
+  font-weight: 500;
+}
+.section-hint-clear {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.section-hint-clear:hover {
+  color: var(--danger);
+}
+
+/* -------- Chat Message Delete Button -------- */
+.msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+.msg-meta .msg-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 0;
+  padding: 0;
+}
+.chat-msg-user .msg-meta {
+  justify-content: flex-end;
+}
+
+.msg-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+.chat-msg:hover .msg-delete-btn {
+  opacity: 0.6;
+}
+.msg-delete-btn:hover {
+  opacity: 1 !important;
+  color: var(--danger);
+}
+.msg-delete-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.3 !important;
+}
+
 /* -------- Error page -------- */
 .workspace-error {
   display: flex;

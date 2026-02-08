@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import {
   exportPRDAsDocx, exportComprehensive, generatePRD, generateDesigns,
   generateSinglePageDesign, generateComprehensive, getChatHistory, getProject, revisePRD,
-  updateProject, updatePrdContent, updateComprehensiveContent,
+  updateProject, updatePrdContent, updateComprehensiveContent, updateChatHistory,
   getPrdVersions, getPrdVersionContent,
   getDesignVersions, getDesignVersionImages,
   getComprehensiveVersions, getComprehensiveVersionContent,
@@ -46,6 +46,12 @@ export default function PRDWorkspace() {
 
   // Version selection for chat revision
   const [selectedRevisionVersion, setSelectedRevisionVersion] = useState(null)
+
+  // PRD section selection for targeted revision
+  const [selectedSection, setSelectedSection] = useState(null) // { title: string, level: number }
+
+  // Chat message deletion
+  const [deletingMessages, setDeletingMessages] = useState(false)
 
   // Resizable PRD/Chat split
   const [prdChatSplitPos, setPrdChatSplitPos] = useState(null) // null = default
@@ -245,7 +251,8 @@ export default function PRDWorkspace() {
     setPrdContent('')
 
     if (isRevision) {
-      // revisePRD has version parameter
+      // revisePRD has version and section parameters
+      const sectionTitle = selectedSection?.title || null
       const abort = streamFn(id, text, {
         onToken(token) {
           tokenBuf += token
@@ -265,10 +272,13 @@ export default function PRDWorkspace() {
           setStreaming(false)
           setStatus('')
           setSelectedRevisionVersion(null)
+          setSelectedSection(null)
           if (tokenBuf) {
             setMessages((prev) => [...prev, {
               role: 'assistant',
-              content: 'PRD 文档已更新，请在左侧查看。',
+              content: sectionTitle
+                ? `PRD 文档「${sectionTitle}」部分已更新，请在左侧查看。`
+                : 'PRD 文档已更新，请在左侧查看。',
               timestamp: new Date().toISOString(),
             }])
             setShowDesignPrompt(true)
@@ -288,7 +298,7 @@ export default function PRDWorkspace() {
           setStatus('')
           setError(msg || '生成失败，请重试')
         },
-      }, selectedRevisionVersion)
+      }, selectedRevisionVersion, sectionTitle)
       abortRef.current = abort
     } else {
       const abort = streamFn(id, text, {
@@ -335,7 +345,7 @@ export default function PRDWorkspace() {
       })
       abortRef.current = abort
     }
-  }, [id, input, streaming, prdContent, selectedRevisionVersion])
+  }, [id, input, streaming, prdContent, selectedRevisionVersion, selectedSection])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -396,6 +406,33 @@ export default function PRDWorkspace() {
       setSavingPrd(false)
     }
   }
+
+  // PRD section selection handler
+  const handleSelectSection = useCallback((title, level) => {
+    setSelectedSection((prev) => {
+      if (prev && prev.title === title && prev.level === level) return null
+      return { title, level }
+    })
+  }, [])
+
+  const handleClearSection = useCallback(() => {
+    setSelectedSection(null)
+  }, [])
+
+  // Chat message deletion handler
+  const handleDeleteMessage = useCallback(async (index) => {
+    if (deletingMessages || streaming) return
+    setDeletingMessages(true)
+    try {
+      const updated = messages.filter((_, i) => i !== index)
+      await updateChatHistory(id, updated)
+      setMessages(updated)
+    } catch {
+      setError('删除消息失败')
+    } finally {
+      setDeletingMessages(false)
+    }
+  }, [id, messages, deletingMessages, streaming])
 
   // PRD version history handlers
   const handleLoadPrdVersion = async (version) => {
@@ -838,6 +875,20 @@ export default function PRDWorkspace() {
     }
   }
 
+  // Extract text from ReactMarkdown heading children
+  const extractHeadingText = (children) => {
+    if (typeof children === 'string') return children
+    if (Array.isArray(children)) {
+      return children.map((c) => {
+        if (typeof c === 'string') return c
+        if (c?.props?.children) return extractHeadingText(c.props.children)
+        return ''
+      }).join('')
+    }
+    if (children?.props?.children) return extractHeadingText(children.props.children)
+    return ''
+  }
+
   const formatVersionTime = (iso) => {
     if (!iso) return '-'
     const d = new Date(iso)
@@ -1026,6 +1077,66 @@ export default function PRDWorkspace() {
                           {alt && <figcaption className="prd-image-caption">{alt}</figcaption>}
                         </figure>
                       ),
+                      h1: ({ children, ...props }) => {
+                        const text = extractHeadingText(children)
+                        const isSelected = selectedSection?.title === text && selectedSection?.level === 1
+                        return (
+                          <h1
+                            {...props}
+                            className={`prd-section-heading ${isSelected ? 'prd-section-heading-selected' : ''}`}
+                            onClick={() => handleSelectSection(text, 1)}
+                            title="点击选择此部分进行针对性修改"
+                          >
+                            {children}
+                            <span className="section-select-icon">{isSelected ? '✓' : ''}</span>
+                          </h1>
+                        )
+                      },
+                      h2: ({ children, ...props }) => {
+                        const text = extractHeadingText(children)
+                        const isSelected = selectedSection?.title === text && selectedSection?.level === 2
+                        return (
+                          <h2
+                            {...props}
+                            className={`prd-section-heading ${isSelected ? 'prd-section-heading-selected' : ''}`}
+                            onClick={() => handleSelectSection(text, 2)}
+                            title="点击选择此部分进行针对性修改"
+                          >
+                            {children}
+                            <span className="section-select-icon">{isSelected ? '✓' : ''}</span>
+                          </h2>
+                        )
+                      },
+                      h3: ({ children, ...props }) => {
+                        const text = extractHeadingText(children)
+                        const isSelected = selectedSection?.title === text && selectedSection?.level === 3
+                        return (
+                          <h3
+                            {...props}
+                            className={`prd-section-heading ${isSelected ? 'prd-section-heading-selected' : ''}`}
+                            onClick={() => handleSelectSection(text, 3)}
+                            title="点击选择此部分进行针对性修改"
+                          >
+                            {children}
+                            <span className="section-select-icon">{isSelected ? '✓' : ''}</span>
+                          </h3>
+                        )
+                      },
+                      h4: ({ children, ...props }) => {
+                        const text = extractHeadingText(children)
+                        const isSelected = selectedSection?.title === text && selectedSection?.level === 4
+                        return (
+                          <h4
+                            {...props}
+                            className={`prd-section-heading ${isSelected ? 'prd-section-heading-selected' : ''}`}
+                            onClick={() => handleSelectSection(text, 4)}
+                            title="点击选择此部分进行针对性修改"
+                          >
+                            {children}
+                            <span className="section-select-icon">{isSelected ? '✓' : ''}</span>
+                          </h4>
+                        )
+                      },
                     }}
                   >
                     {prdContent}
@@ -1091,11 +1202,23 @@ export default function PRDWorkspace() {
                   <div className="msg-avatar">{msg.role === 'user' ? '👤' : '🤖'}</div>
                   <div className="msg-bubble">
                     <div className="msg-content">{msg.content}</div>
-                    {msg.timestamp && (
-                      <div className="msg-time">
-                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    )}
+                    <div className="msg-meta">
+                      {msg.timestamp && (
+                        <span className="msg-time">
+                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      {!streaming && (
+                        <button
+                          className="msg-delete-btn"
+                          onClick={() => handleDeleteMessage(i)}
+                          disabled={deletingMessages}
+                          title="删除此消息"
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1114,6 +1237,13 @@ export default function PRDWorkspace() {
             {/* Input area */}
             <div className="chat-input-area">
               {error && <div className="chat-error">{error}</div>}
+              {selectedSection && (
+                <div className="section-selection-hint">
+                  <span className="section-hint-icon">&#9998;</span>
+                  <span className="section-hint-text">针对「{selectedSection.title}」部分修改</span>
+                  <button className="section-hint-clear" onClick={handleClearSection}>&times;</button>
+                </div>
+              )}
               {selectedRevisionVersion && (
                 <div className="revision-version-hint">
                   将基于版本 v{selectedRevisionVersion} 进行修改
@@ -1126,7 +1256,7 @@ export default function PRDWorkspace() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={prdContent ? '输入修改意见，如：增加数据分析功能...' : '描述你的产品需求...'}
+                  placeholder={selectedSection ? `输入对「${selectedSection.title}」的修改意见...` : prdContent ? '输入修改意见，如：增加数据分析功能...' : '描述你的产品需求...'}
                   rows={3}
                   disabled={streaming}
                 />
@@ -1139,7 +1269,9 @@ export default function PRDWorkspace() {
                 </div>
               </div>
               <div className="input-hint">
-                {prdContent ? 'Enter 发送修改意见 · Shift+Enter 换行' : 'Enter 发送 · Shift+Enter 换行'}
+                {prdContent
+                  ? `Enter 发送修改意见 · Shift+Enter 换行${selectedSection ? '' : ' · 点击左侧标题可选择部分修改'}`
+                  : 'Enter 发送 · Shift+Enter 换行'}
               </div>
             </div>
           </section>

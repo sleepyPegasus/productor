@@ -149,6 +149,16 @@ export async function getChatHistory(id) {
   return res.json();
 }
 
+export async function updateChatHistory(id, messages) {
+  const res = await fetch(`${BASE}/projects/${id}/chat`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.ok) throw new Error('更新对话记录失败');
+  return res.json();
+}
+
 export async function fetchModels() {
   const res = await fetch(`${BASE}/models`);
   if (!res.ok) throw new Error('获取模型列表失败');
@@ -600,11 +610,12 @@ export function generateComprehensive(projectId, callbacks) {
  * Revise PRD via SSE stream.
  * Same callback shape as generatePRD.
  */
-export function revisePRD(projectId, message, callbacks, version = null) {
+export function revisePRD(projectId, message, callbacks, version = null, section = null) {
   const controller = new AbortController();
 
   const body = { message }
   if (version !== null) body.version = version
+  if (section !== null) body.section = section
 
   fetch(`${BASE}/projects/${projectId}/revise`, {
     method: 'POST',
