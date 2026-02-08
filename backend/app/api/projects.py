@@ -22,10 +22,12 @@ from app.db.database import (
     restore_project,
     save_comprehensive_version,
     save_prd_version,
+    update_chat_history,
     update_comprehensive_content,
     update_project,
 )
 from app.models.schemas import (
+    ChatHistoryUpdate,
     ChatMessage,
     ModelsResponse,
     PrdContentUpdate,
@@ -118,6 +120,17 @@ async def api_get_chat_history(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
     return get_chat_history(project_id)
+
+
+@router.put("/{project_id}/chat")
+async def api_update_chat_history(project_id: str, body: ChatHistoryUpdate):
+    """Update (replace) chat history, used for deleting selected messages."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    messages = [m.model_dump() for m in body.messages]
+    update_chat_history(project_id, messages)
+    return {"detail": "对话记录已更新"}
 
 
 # PRD content editing and versioning

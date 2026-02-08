@@ -157,13 +157,23 @@ async def api_revise_prd(project_id: str, body: ReviseWithVersionRequest):
         if version_content:
             target_prd = version_content
 
+    # Build targeted feedback if a section is selected
+    effective_feedback = feedback
+    if body.section:
+        effective_feedback = (
+            f"[用户选择了PRD文档中的「{body.section}」部分进行针对性修改]\n\n"
+            f"用户要求：{feedback}\n\n"
+            f"请重点修改「{body.section}」部分的内容，其他部分尽量保持不变。"
+            f"输出完整的修改后的PRD文档。"
+        )
+
     async def event_stream():
         prd_content = None
         has_error = False
 
         try:
             async for event_str in run_revision_pipeline_stream(
-                target_prd, structured, feedback, chat_model=chat_model
+                target_prd, structured, effective_feedback, chat_model=chat_model
             ):
                 event = json.loads(event_str)
 

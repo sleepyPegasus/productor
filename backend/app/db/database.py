@@ -234,6 +234,11 @@ def get_chat_history(project_id: str) -> list[dict]:
     return json.loads(project["chat_history"] or "[]")
 
 
+def update_chat_history(project_id: str, messages: list[dict]):
+    """Replace the entire chat history with the provided messages list."""
+    update_project(project_id, chat_history=json.dumps(messages, ensure_ascii=False))
+
+
 def append_version_history(project_id: str, action: str, feedback: str = None):
     project = get_project(project_id)
     if not project:

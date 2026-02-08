@@ -86,6 +86,10 @@ class ChatMessage(BaseModel):
     timestamp: Optional[str] = None
 
 
+class ChatHistoryUpdate(BaseModel):
+    messages: list[ChatMessage] = Field(..., description="Updated chat messages list")
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
 
@@ -93,6 +97,7 @@ class ChatRequest(BaseModel):
 class ReviseWithVersionRequest(BaseModel):
     message: str = Field(..., min_length=1)
     version: Optional[int] = Field(None, description="Target PRD version to revise against")
+    section: Optional[str] = Field(None, description="Selected PRD section title for targeted revision")
 
 
 class VersionHistory(BaseModel):
