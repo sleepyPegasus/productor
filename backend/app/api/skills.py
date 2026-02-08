@@ -3,7 +3,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from app.db.database import (
     create_skill,
@@ -15,6 +15,7 @@ from app.db.database import (
 )
 from app.models.schemas import SkillCreate, SkillUpdate
 from app.services.skill_service import reset_skill_to_default
+from app.api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/skills", tags=["skills"])
 
 
 @router.get("")
-async def api_list_skills(category: str = None, is_enabled: bool = None):
+async def api_list_skills(category: str = None, is_enabled: bool = None, current_user: dict = Depends(get_current_user)):
     """List all skills, optionally filtered by category or enabled status."""
     skills = list_skills(category=category, is_enabled=is_enabled)
     # Convert integer booleans to actual booleans for JSON response
@@ -33,7 +34,7 @@ async def api_list_skills(category: str = None, is_enabled: bool = None):
 
 
 @router.get("/{skill_id}")
-async def api_get_skill(skill_id: str):
+async def api_get_skill(skill_id: str, current_user: dict = Depends(get_current_user)):
     """Get a single skill by ID."""
     skill = get_skill(skill_id)
     if not skill:
@@ -44,7 +45,7 @@ async def api_get_skill(skill_id: str):
 
 
 @router.post("")
-async def api_create_skill(body: SkillCreate):
+async def api_create_skill(body: SkillCreate, current_user: dict = Depends(get_current_user)):
     """Create a new custom skill."""
     if skill_exists(body.name):
         raise HTTPException(status_code=409, detail=f"技能名称 '{body.name}' 已存在")
@@ -70,7 +71,7 @@ async def api_create_skill(body: SkillCreate):
 
 
 @router.put("/{skill_id}")
-async def api_update_skill(skill_id: str, body: SkillUpdate):
+async def api_update_skill(skill_id: str, body: SkillUpdate, current_user: dict = Depends(get_current_user)):
     """Update an existing skill."""
     skill = get_skill(skill_id)
     if not skill:
@@ -111,7 +112,7 @@ async def api_update_skill(skill_id: str, body: SkillUpdate):
 
 
 @router.delete("/{skill_id}")
-async def api_delete_skill(skill_id: str):
+async def api_delete_skill(skill_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a custom skill. Built-in skills cannot be deleted."""
     skill = get_skill(skill_id)
     if not skill:
@@ -126,7 +127,7 @@ async def api_delete_skill(skill_id: str):
 
 
 @router.post("/{skill_id}/reset")
-async def api_reset_skill(skill_id: str):
+async def api_reset_skill(skill_id: str, current_user: dict = Depends(get_current_user)):
     """Reset a built-in skill to its factory default."""
     skill = get_skill(skill_id)
     if not skill:
@@ -143,7 +144,7 @@ async def api_reset_skill(skill_id: str):
 
 
 @router.post("/{skill_id}/duplicate")
-async def api_duplicate_skill(skill_id: str):
+async def api_duplicate_skill(skill_id: str, current_user: dict = Depends(get_current_user)):
     """Duplicate a skill as a new custom skill."""
     source = get_skill(skill_id)
     if not source:

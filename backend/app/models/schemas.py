@@ -2,7 +2,71 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
+
+
+# ---------------------------------------------------------------------------
+# Auth & Users
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50, pattern=r'^[a-zA-Z][a-zA-Z0-9_]*$')
+    email: str = Field(..., min_length=5, max_length=200)
+    password: str = Field(..., min_length=4, max_length=100)
+    verification_code: str = Field(..., min_length=6, max_length=6)
+
+
+class SendVerificationRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=200)
+    purpose: str = Field(default="register", max_length=20)
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=4, max_length=100)
+
+
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    is_admin: bool
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class UserUpdateRequest(BaseModel):
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+class ProjectPermissionRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    permission: str = Field(..., pattern=r'^(view|edit)$')
+
+
+class ProjectPermissionResponse(BaseModel):
+    id: str
+    project_id: str
+    user_id: str
+    username: Optional[str] = None
+    email: Optional[str] = None
+    permission: str
+    granted_by: str
+    created_at: str
+    updated_at: str
 
 
 class ProjectStatus(str, Enum):
@@ -47,6 +111,7 @@ class ProjectResponse(BaseModel):
     status: ProjectStatus
     version: int
     category: Optional[str] = "active"
+    owner_id: Optional[str] = None
     chat_model: Optional[str] = None
     image_model: Optional[str] = None
     comprehensive_model: Optional[str] = None
@@ -69,6 +134,7 @@ class ProjectListItem(BaseModel):
     status: ProjectStatus
     version: int
     category: Optional[str] = "active"
+    owner_id: Optional[str] = None
     chat_model: Optional[str] = None
     image_model: Optional[str] = None
     comprehensive_model: Optional[str] = None

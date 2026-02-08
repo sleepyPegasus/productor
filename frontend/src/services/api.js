@@ -1,5 +1,159 @@
 const BASE = '/api';
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
+function getAuthHeadersOnly() {
+  const token = localStorage.getItem('token');
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
+// ---------------------------------------------------------------------------
+// Auth API
+// ---------------------------------------------------------------------------
+
+export async function apiLogin(username, password) {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '登录失败' }));
+    throw new Error(err.detail || '登录失败');
+  }
+  return res.json();
+}
+
+export async function apiSendCode(email, purpose = 'register') {
+  const res = await fetch(`${BASE}/auth/send-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, purpose }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '发送验证码失败' }));
+    throw new Error(err.detail || '发送验证码失败');
+  }
+  return res.json();
+}
+
+export async function apiRegister(username, email, password, verificationCode) {
+  const res = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, email, password, verification_code: verificationCode }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '注册失败' }));
+    throw new Error(err.detail || '注册失败');
+  }
+  return res.json();
+}
+
+export async function apiChangePassword(oldPassword, newPassword) {
+  const res = await fetch(`${BASE}/auth/change-password`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '修改密码失败' }));
+    throw new Error(err.detail || '修改密码失败');
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Users API
+// ---------------------------------------------------------------------------
+
+export async function fetchUsers() {
+  const res = await fetch(`${BASE}/users`, { headers: getAuthHeadersOnly() });
+  if (!res.ok) throw new Error('获取用户列表失败');
+  return res.json();
+}
+
+export async function updateUser(userId, updates) {
+  const res = await fetch(`${BASE}/users/${userId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '更新用户失败' }));
+    throw new Error(err.detail || '更新用户失败');
+  }
+  return res.json();
+}
+
+export async function deleteUser(userId) {
+  const res = await fetch(`${BASE}/users/${userId}`, {
+    method: 'DELETE',
+    headers: getAuthHeadersOnly(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '删除用户失败' }));
+    throw new Error(err.detail || '删除用户失败');
+  }
+  return res.json();
+}
+
+export async function resetUserPassword(userId) {
+  const res = await fetch(`${BASE}/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: getAuthHeadersOnly(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '重置密码失败' }));
+    throw new Error(err.detail || '重置密码失败');
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Project Permissions API
+// ---------------------------------------------------------------------------
+
+export async function fetchProjectPermissions(projectId) {
+  const res = await fetch(`${BASE}/projects/${projectId}/permissions`, {
+    headers: getAuthHeadersOnly(),
+  });
+  if (!res.ok) throw new Error('获取权限列表失败');
+  return res.json();
+}
+
+export async function setProjectPermission(projectId, userId, permission) {
+  const res = await fetch(`${BASE}/projects/${projectId}/permissions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ user_id: userId, permission }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '设置权限失败' }));
+    throw new Error(err.detail || '设置权限失败');
+  }
+  return res.json();
+}
+
+export async function removeProjectPermission(projectId, userId) {
+  const res = await fetch(`${BASE}/projects/${projectId}/permissions/${userId}`, {
+    method: 'DELETE',
+    headers: getAuthHeadersOnly(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '移除权限失败' }));
+    throw new Error(err.detail || '移除权限失败');
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Skills API
 // ---------------------------------------------------------------------------
@@ -8,13 +162,13 @@ export async function fetchSkills(category = null, isEnabled = null) {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
   if (isEnabled !== null) params.set('is_enabled', isEnabled);
-  const res = await fetch(`${BASE}/skills?${params.toString()}`);
+  const res = await fetch(`${BASE}/skills?${params.toString()}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取技能列表失败');
   return res.json();
 }
 
 export async function getSkill(skillId) {
-  const res = await fetch(`${BASE}/skills/${skillId}`);
+  const res = await fetch(`${BASE}/skills/${skillId}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取技能详情失败');
   return res.json();
 }
@@ -22,7 +176,7 @@ export async function getSkill(skillId) {
 export async function createSkill(data) {
   const res = await fetch(`${BASE}/skills`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
   if (!res.ok) {
@@ -35,7 +189,7 @@ export async function createSkill(data) {
 export async function updateSkill(skillId, updates) {
   const res = await fetch(`${BASE}/skills/${skillId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(updates),
   });
   if (!res.ok) {
@@ -46,7 +200,7 @@ export async function updateSkill(skillId, updates) {
 }
 
 export async function deleteSkill(skillId) {
-  const res = await fetch(`${BASE}/skills/${skillId}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/skills/${skillId}`, { method: 'DELETE', headers: getAuthHeadersOnly() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '删除技能失败' }));
     throw new Error(err.detail || '删除技能失败');
@@ -55,7 +209,7 @@ export async function deleteSkill(skillId) {
 }
 
 export async function resetSkill(skillId) {
-  const res = await fetch(`${BASE}/skills/${skillId}/reset`, { method: 'POST' });
+  const res = await fetch(`${BASE}/skills/${skillId}/reset`, { method: 'POST', headers: getAuthHeadersOnly() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '重置技能失败' }));
     throw new Error(err.detail || '重置技能失败');
@@ -64,7 +218,7 @@ export async function resetSkill(skillId) {
 }
 
 export async function duplicateSkill(skillId) {
-  const res = await fetch(`${BASE}/skills/${skillId}/duplicate`, { method: 'POST' });
+  const res = await fetch(`${BASE}/skills/${skillId}/duplicate`, { method: 'POST', headers: getAuthHeadersOnly() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '复制技能失败' }));
     throw new Error(err.detail || '复制技能失败');
@@ -80,7 +234,7 @@ export async function fetchProjects(category = 'active', search = '') {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
   if (search) params.set('search', search);
-  const res = await fetch(`${BASE}/projects?${params.toString()}`);
+  const res = await fetch(`${BASE}/projects?${params.toString()}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取项目列表失败');
   return res.json();
 }
@@ -88,7 +242,7 @@ export async function fetchProjects(category = 'active', search = '') {
 export async function createProject(name, description = '', chatModel = '', imageModel = '', comprehensiveModel = '', defaultImageResolution = '', defaultImageRatio = '') {
   const res = await fetch(`${BASE}/projects`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       name,
       description,
@@ -104,25 +258,25 @@ export async function createProject(name, description = '', chatModel = '', imag
 }
 
 export async function archiveProject(id) {
-  const res = await fetch(`${BASE}/projects/${id}/archive`, { method: 'POST' });
+  const res = await fetch(`${BASE}/projects/${id}/archive`, { method: 'POST', headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('归档失败');
   return res.json();
 }
 
 export async function restoreProject(id) {
-  const res = await fetch(`${BASE}/projects/${id}/restore`, { method: 'POST' });
+  const res = await fetch(`${BASE}/projects/${id}/restore`, { method: 'POST', headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('恢复失败');
   return res.json();
 }
 
 export async function permanentlyDeleteProject(id) {
-  const res = await fetch(`${BASE}/projects/${id}/permanent`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/projects/${id}/permanent`, { method: 'DELETE', headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('永久删除失败');
   return res.json();
 }
 
 export async function getProject(id) {
-  const res = await fetch(`${BASE}/projects/${id}`);
+  const res = await fetch(`${BASE}/projects/${id}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取项目失败');
   return res.json();
 }
@@ -130,7 +284,7 @@ export async function getProject(id) {
 export async function updateProject(id, updates) {
   const res = await fetch(`${BASE}/projects/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error('更新项目失败');
@@ -138,13 +292,13 @@ export async function updateProject(id, updates) {
 }
 
 export async function deleteProject(id) {
-  const res = await fetch(`${BASE}/projects/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/projects/${id}`, { method: 'DELETE', headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('删除项目失败');
   return res.json();
 }
 
 export async function getChatHistory(id) {
-  const res = await fetch(`${BASE}/projects/${id}/chat`);
+  const res = await fetch(`${BASE}/projects/${id}/chat`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取聊天记录失败');
   return res.json();
 }
@@ -152,7 +306,7 @@ export async function getChatHistory(id) {
 export async function updateChatHistory(id, messages) {
   const res = await fetch(`${BASE}/projects/${id}/chat`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ messages }),
   });
   if (!res.ok) throw new Error('更新对话记录失败');
@@ -169,7 +323,7 @@ export async function fetchModels() {
 export async function updatePrdContent(projectId, content) {
   const res = await fetch(`${BASE}/projects/${projectId}/prd-content`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ content }),
   });
   if (!res.ok) throw new Error('保存 PRD 内容失败');
@@ -178,39 +332,39 @@ export async function updatePrdContent(projectId, content) {
 
 // PRD version history
 export async function getPrdVersions(projectId) {
-  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions`);
+  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取版本历史失败');
   return res.json();
 }
 
 export async function getPrdVersionContent(projectId, version) {
-  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions/${version}`);
+  const res = await fetch(`${BASE}/projects/${projectId}/prd-versions/${version}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取版本内容失败');
   return res.json();
 }
 
 // Design version history
 export async function getDesignVersions(projectId) {
-  const res = await fetch(`${BASE}/projects/${projectId}/design-versions`);
+  const res = await fetch(`${BASE}/projects/${projectId}/design-versions`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取设计版本历史失败');
   return res.json();
 }
 
 export async function getDesignVersionImages(projectId, version) {
-  const res = await fetch(`${BASE}/projects/${projectId}/design-versions/${version}`);
+  const res = await fetch(`${BASE}/projects/${projectId}/design-versions/${version}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取设计版本失败');
   return res.json();
 }
 
 // Comprehensive solution version history
 export async function getComprehensiveVersions(projectId) {
-  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions`);
+  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取综合方案版本历史失败');
   return res.json();
 }
 
 export async function getComprehensiveVersionContent(projectId, version) {
-  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions/${version}`);
+  const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-versions/${version}`, { headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('获取综合方案版本内容失败');
   return res.json();
 }
@@ -218,7 +372,7 @@ export async function getComprehensiveVersionContent(projectId, version) {
 export async function updateComprehensiveContent(projectId, content) {
   const res = await fetch(`${BASE}/projects/${projectId}/comprehensive-content`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ content }),
   });
   if (!res.ok) throw new Error('保存综合方案内容失败');
@@ -237,7 +391,7 @@ export function generatePRD(projectId, message, callbacks) {
 
   fetch(`${BASE}/projects/${projectId}/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ message }),
     signal: controller.signal,
   })
@@ -320,7 +474,7 @@ export function generatePRD(projectId, message, callbacks) {
  * @param {string} projectName - used for the filename
  */
 export async function exportPRDAsDocx(projectId, projectName = 'PRD') {
-  const res = await fetch(`${BASE}/projects/${projectId}/export/docx`);
+  const res = await fetch(`${BASE}/projects/${projectId}/export/docx`, { headers: getAuthHeadersOnly() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '导出失败' }));
     throw new Error(err.detail || '导出失败');
@@ -345,7 +499,7 @@ export async function exportPRDAsDocx(projectId, projectName = 'PRD') {
 export async function exportComprehensive(projectId, projectName = '产品方案', format = 'docx') {
   const res = await fetch(`${BASE}/projects/${projectId}/export/comprehensive`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ format }),
   });
   if (!res.ok) {
@@ -379,7 +533,7 @@ export function generateDesigns(projectId, callbacks, options = {}) {
 
   fetch(`${BASE}/projects/${projectId}/generate-designs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(body),
     signal: controller.signal,
   })
@@ -462,7 +616,7 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
 
   fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(body),
     signal: controller.signal,
   })
@@ -537,7 +691,7 @@ export function generateComprehensive(projectId, callbacks) {
 
   fetch(`${BASE}/projects/${projectId}/generate-comprehensive`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     signal: controller.signal,
   })
     .then((res) => {
@@ -619,7 +773,7 @@ export function revisePRD(projectId, message, callbacks, version = null, section
 
   fetch(`${BASE}/projects/${projectId}/revise`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(body),
     signal: controller.signal,
   })
