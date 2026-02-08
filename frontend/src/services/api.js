@@ -361,12 +361,16 @@ export async function exportComprehensive(projectId, projectName = '产品方案
  * @param {object} callbacks - { onImage, onStatus, onDone, onError }
  * @returns {function} abort function
  */
-export function generateDesigns(projectId, callbacks) {
+export function generateDesigns(projectId, callbacks, options = {}) {
   const controller = new AbortController();
+
+  const body = {}
+  if (options.globalStyle) body.global_style = options.globalStyle
 
   fetch(`${BASE}/projects/${projectId}/generate-designs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then((res) => {
@@ -444,6 +448,7 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
   if (imageConfig.resolution) body.image_resolution = imageConfig.resolution
   if (imageConfig.ratio) body.image_ratio = imageConfig.ratio
   if (imageConfig.extraRequirements) body.image_extra_requirements = imageConfig.extraRequirements
+  if (imageConfig.referenceImage) body.reference_image = imageConfig.referenceImage
 
   fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
     method: 'POST',

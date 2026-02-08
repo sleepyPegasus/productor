@@ -76,6 +76,14 @@ export default function PRDWorkspace() {
   const [imageConfigPage, setImageConfigPage] = useState(null)
   const [pageImageConfigs, setPageImageConfigs] = useState({})
 
+  // Add custom page modal
+  const [showAddPageModal, setShowAddPageModal] = useState(false)
+  const [addPageForm, setAddPageForm] = useState({ name: '', description: '', keyElements: '', layoutDescription: '' })
+
+  // Global UI style settings
+  const [showGlobalStyleModal, setShowGlobalStyleModal] = useState(false)
+  const [globalStyle, setGlobalStyle] = useState({ designStyle: '', colorScheme: '', layoutRequirements: '', fontStyle: '', customNotes: '' })
+
   // Comprehensive export state
   const [comprehensiveExporting, setComprehensiveExporting] = useState(false)
   const [comprehensiveFormat, setComprehensiveFormat] = useState('docx')
@@ -143,6 +151,9 @@ export default function PRDWorkspace() {
             const plan = JSON.parse(proj.pages_plan)
             if (plan.pages && Array.isArray(plan.pages)) {
               setPagesList(plan.pages)
+            }
+            if (plan.globalStyle) {
+              setGlobalStyle(plan.globalStyle)
             }
           } catch { /* ignore */ }
         }
@@ -339,16 +350,10 @@ export default function PRDWorkspace() {
     setStatus('')
   }
 
-  // Handle "generate designs" from PRD prompt banner
+  // Handle "go to design" from PRD prompt banner (navigate only, no auto generation)
   const handleGoToDesignAndGenerate = () => {
     setShowDesignPrompt(false)
     handleTabChange('design')
-    // Trigger design generation after tab switch
-    setTimeout(() => {
-      if (!designGenerating && !generatingPageId && pagesList.length > 0) {
-        handleGenerateAllDesigns()
-      }
-    }, 100)
   }
 
   const handleExportDocx = async () => {
@@ -437,6 +442,17 @@ export default function PRDWorkspace() {
     document.addEventListener('mouseup', handleMouseUp)
   }, [])
 
+  // Build global style string for image generation prompts
+  const buildGlobalStyleText = useCallback(() => {
+    const parts = []
+    if (globalStyle.designStyle) parts.push(`设计风格：${globalStyle.designStyle}`)
+    if (globalStyle.colorScheme) parts.push(`配色方案：${globalStyle.colorScheme}`)
+    if (globalStyle.layoutRequirements) parts.push(`布局要求：${globalStyle.layoutRequirements}`)
+    if (globalStyle.fontStyle) parts.push(`字体风格：${globalStyle.fontStyle}`)
+    if (globalStyle.customNotes) parts.push(globalStyle.customNotes)
+    return parts.join('；')
+  }, [globalStyle])
+
   // Generate all designs handler
   const handleGenerateAllDesigns = useCallback(() => {
     if (designGenerating) return
@@ -445,6 +461,7 @@ export default function PRDWorkspace() {
     setDesignStatus('正在准备生成所有界面设计图...')
     setDesignImages([])
 
+    const globalStyleText = buildGlobalStyleText()
     const abort = generateDesigns(id, {
       onImage(imageData) {
         setDesignImages((prev) => [...prev, imageData])
@@ -460,9 +477,9 @@ export default function PRDWorkspace() {
         setDesignStatus('')
         setDesignError(msg || '设计图生成失败，请重试')
       },
-    })
+    }, { globalStyle: globalStyleText })
     designAbortRef.current = abort
-  }, [id, designGenerating])
+  }, [id, designGenerating, buildGlobalStyleText])
 
   // Generate single page design
   const handleGeneratePageDesign = useCallback((pageId) => {
@@ -471,11 +488,15 @@ export default function PRDWorkspace() {
     setGeneratingPageId(pageId)
 
     const pageConfig = pageImageConfigs[pageId] || {}
+    const globalStyleText = buildGlobalStyleText()
     // Merge project defaults with page-specific config (page-specific takes priority)
+    // Combine global style + page extra requirements
+    const combinedExtra = [globalStyleText, pageConfig.extraRequirements || ''].filter(Boolean).join('；')
     const imageConfig = {
       resolution: pageConfig.resolution || project?.default_image_resolution || '',
       ratio: pageConfig.ratio || project?.default_image_ratio || '',
-      extraRequirements: pageConfig.extraRequirements || '',
+      extraRequirements: combinedExtra,
+      referenceImage: pageConfig.referenceImage || '',
     }
 
     const abort = generateSinglePageDesign(id, pageId, {
@@ -498,7 +519,7 @@ export default function PRDWorkspace() {
       },
     }, imageConfig)
     designAbortRef.current = abort
-  }, [id, generatingPageId, pageImageConfigs])
+  }, [id, generatingPageId, pageImageConfigs, buildGlobalStyleText])
 
   const handleStopDesign = () => {
     designAbortRef.current?.()
@@ -546,6 +567,31 @@ export default function PRDWorkspace() {
     setImageConfigPage(null)
   }
 
+  // Save global style handler
+  const handleSaveGlobalStyle = () => {
+    const updatedPlan = { pages: pagesList, globalStyle }
+    updateProject(id, { pages_plan: JSON.stringify(updatedPlan) }).catch(() => {})
+    setShowGlobalStyleModal(false)
+  }
+
+  // Add custom page handler
+  const handleAddCustomPage = () => {
+    if (!addPageForm.name.trim()) return
+    const newPage = {
+      id: `custom_${Date.now()}`,
+      name: addPageForm.name.trim(),
+      description: addPageForm.description.trim(),
+      keyElements: addPageForm.keyElements.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+      layoutDescription: addPageForm.layoutDescription.trim(),
+      category: 'active',
+    }
+    const updatedPages = [...pagesList, newPage]
+    setPagesList(updatedPages)
+    updateProject(id, { pages_plan: JSON.stringify({ pages: updatedPages, globalStyle }) }).catch(() => {})
+    setShowAddPageModal(false)
+    setAddPageForm({ name: '', description: '', keyElements: '', layoutDescription: '' })
+  }
+
   // Page archive/delete/restore handlers
   const updatePageCategory = (pageId, category) => {
     const updatedPages = pagesList.map((p) =>
@@ -553,7 +599,7 @@ export default function PRDWorkspace() {
     )
     setPagesList(updatedPages)
     // Persist to backend
-    updateProject(id, { pages_plan: JSON.stringify({ pages: updatedPages }) }).catch(() => {})
+    updateProject(id, { pages_plan: JSON.stringify({ pages: updatedPages, globalStyle }) }).catch(() => {})
   }
 
   const handleArchivePage = (pageId, e) => {
@@ -955,8 +1001,8 @@ export default function PRDWorkspace() {
             {/* Design generation prompt banner */}
             {showDesignPrompt && prdContent && !streaming && (
               <div className="prd-design-prompt">
-                <span className="prd-design-prompt-text">PRD 已生成，是否根据新版本生成产品界面设计？</span>
-                <button className="btn-primary" onClick={handleGoToDesignAndGenerate}>生成界面设计</button>
+                <span className="prd-design-prompt-text">PRD 已生成，可前往产品界面设计页面查看页面结构并生成设计图</span>
+                <button className="btn-primary" onClick={handleGoToDesignAndGenerate}>前往界面设计</button>
                 <button className="btn-dismiss" onClick={() => setShowDesignPrompt(false)}>&times;</button>
               </div>
             )}
@@ -1122,6 +1168,20 @@ export default function PRDWorkspace() {
                   <h3>页面列表</h3>
                   <div className="design-page-list-actions">
                     <button
+                      className="btn-small btn-add-page"
+                      onClick={() => setShowAddPageModal(true)}
+                      title="新增自定义页面"
+                    >
+                      + 新增
+                    </button>
+                    <button
+                      className={`btn-small btn-global-style ${buildGlobalStyleText() ? 'btn-global-style-active' : ''}`}
+                      onClick={() => setShowGlobalStyleModal(true)}
+                      title="全局界面风格设置"
+                    >
+                      风格
+                    </button>
+                    <button
                       className="btn-small"
                       onClick={() => setShowDesignVersions(!showDesignVersions)}
                       title="设计版本历史"
@@ -1131,6 +1191,15 @@ export default function PRDWorkspace() {
                     <span className="page-count">{pagesList.filter((p) => (p.category || 'active') === 'active').length} / {pagesList.length}</span>
                   </div>
                 </div>
+
+                {/* Global style indicator */}
+                {buildGlobalStyleText() && (
+                  <div className="global-style-indicator" onClick={() => setShowGlobalStyleModal(true)}>
+                    <span className="global-style-dot" />
+                    <span className="global-style-text">全局风格：{globalStyle.designStyle || '已设置'}</span>
+                    {globalStyle.colorScheme && <span className="global-style-tag">{globalStyle.colorScheme}</span>}
+                  </div>
+                )}
 
                 {/* Page filter tabs */}
                 {pagesList.some((p) => p.category && p.category !== 'active') && (
@@ -1222,6 +1291,7 @@ export default function PRDWorkspace() {
                           <div className="design-page-config-tags">
                             {pageConfig.resolution && <span className="config-tag">{pageConfig.resolution}</span>}
                             {pageConfig.ratio && <span className="config-tag">{pageConfig.ratio}</span>}
+                            {pageConfig.referenceImage && <span className="config-tag config-tag-ref">参考图</span>}
                             {pageConfig.extraRequirements && <span className="config-tag" title={pageConfig.extraRequirements}>+其他要求</span>}
                           </div>
                         )}
@@ -1432,6 +1502,41 @@ export default function PRDWorkspace() {
                     </select>
                   </label>
                   <label className="form-label">
+                    参考图片
+                    <span className="form-hint">上传参考图片，生成设计图时将引用其风格和布局</span>
+                    {pageImageConfigs[imageConfigPage]?.referenceImage ? (
+                      <div className="reference-image-preview">
+                        <img src={pageImageConfigs[imageConfigPage].referenceImage} alt="参考图片" />
+                        <button className="btn-remove-ref-image" onClick={() => {
+                          setPageImageConfigs((prev) => {
+                            const updated = { ...prev[imageConfigPage] }
+                            delete updated.referenceImage
+                            return { ...prev, [imageConfigPage]: updated }
+                          })
+                        }}>&times; 移除</button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="form-file-input"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = (ev) => {
+                            setPageImageConfigs((prev) => ({
+                              ...prev,
+                              [imageConfigPage]: { ...prev[imageConfigPage], referenceImage: ev.target.result },
+                            }))
+                          }
+                          reader.readAsDataURL(file)
+                          e.target.value = ''
+                        }}
+                      />
+                    )}
+                  </label>
+                  <label className="form-label">
                     其他要求
                     <textarea
                       className="form-textarea"
@@ -1448,6 +1553,94 @@ export default function PRDWorkspace() {
                 <div className="modal-actions">
                   <button className="btn-secondary" onClick={() => setImageConfigPage(null)}>取消</button>
                   <button className="btn-primary" onClick={() => handleSaveImageConfig(imageConfigPage, pageImageConfigs[imageConfigPage] || {})}>确定</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Global UI Style Modal */}
+          {showGlobalStyleModal && (
+            <div className="modal-overlay" onClick={() => setShowGlobalStyleModal(false)}>
+              <div className="modal modal-extra-wide" onClick={(e) => e.stopPropagation()}>
+                <h2>全局界面风格设置</h2>
+                <p className="modal-desc">设置统一的界面风格，将应用于所有页面的设计图生成</p>
+                <div className="modal-form">
+                  <label className="form-label">
+                    设计风格
+                    <select className="form-select" value={globalStyle.designStyle} onChange={(e) => setGlobalStyle((s) => ({ ...s, designStyle: e.target.value }))}>
+                      <option value="">请选择设计风格</option>
+                      <option value="现代简约">现代简约</option>
+                      <option value="扁平化设计">扁平化设计</option>
+                      <option value="Material Design">Material Design</option>
+                      <option value="iOS 风格">iOS 风格</option>
+                      <option value="新拟态(Neumorphism)">新拟态 (Neumorphism)</option>
+                      <option value="玻璃拟态(Glassmorphism)">玻璃拟态 (Glassmorphism)</option>
+                      <option value="暗色模式">暗色模式</option>
+                      <option value="企业级专业风格">企业级专业风格</option>
+                      <option value="年轻活力风格">年轻活力风格</option>
+                      <option value="极简主义">极简主义</option>
+                    </select>
+                  </label>
+                  <label className="form-label">
+                    配色方案
+                    <input type="text" className="form-input" value={globalStyle.colorScheme} onChange={(e) => setGlobalStyle((s) => ({ ...s, colorScheme: e.target.value }))} placeholder="如：蓝白主色调、深色背景+亮色强调、品牌色 #4F46E5" />
+                  </label>
+                  <label className="form-label">
+                    布局要求
+                    <input type="text" className="form-input" value={globalStyle.layoutRequirements} onChange={(e) => setGlobalStyle((s) => ({ ...s, layoutRequirements: e.target.value }))} placeholder="如：顶部导航+左侧菜单、卡片式布局、响应式设计" />
+                  </label>
+                  <label className="form-label">
+                    字体风格
+                    <input type="text" className="form-input" value={globalStyle.fontStyle} onChange={(e) => setGlobalStyle((s) => ({ ...s, fontStyle: e.target.value }))} placeholder="如：无衬线字体、大标题突出、紧凑排版" />
+                  </label>
+                  <label className="form-label">
+                    其他风格说明
+                    <textarea
+                      className="form-textarea"
+                      rows={3}
+                      value={globalStyle.customNotes}
+                      onChange={(e) => setGlobalStyle((s) => ({ ...s, customNotes: e.target.value }))}
+                      placeholder="其他统一的设计要求，如：圆角卡片、阴影效果、间距宽松、图标风格统一..."
+                    />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-secondary" onClick={() => {
+                    setGlobalStyle({ designStyle: '', colorScheme: '', layoutRequirements: '', fontStyle: '', customNotes: '' })
+                  }}>清空设置</button>
+                  <button className="btn-secondary" onClick={() => setShowGlobalStyleModal(false)}>取消</button>
+                  <button className="btn-primary" onClick={handleSaveGlobalStyle}>保存风格</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Custom Page Modal */}
+          {showAddPageModal && (
+            <div className="modal-overlay" onClick={() => setShowAddPageModal(false)}>
+              <div className="modal modal-extra-wide" onClick={(e) => e.stopPropagation()}>
+                <h2>新增自定义页面</h2>
+                <div className="modal-form">
+                  <label className="form-label">
+                    页面名称 *
+                    <input type="text" className="form-input" value={addPageForm.name} onChange={(e) => setAddPageForm((f) => ({ ...f, name: e.target.value }))} placeholder="如：用户中心、数据看板" />
+                  </label>
+                  <label className="form-label">
+                    页面描述
+                    <textarea className="form-textarea" rows={3} value={addPageForm.description} onChange={(e) => setAddPageForm((f) => ({ ...f, description: e.target.value }))} placeholder="描述页面的主要功能和用途" />
+                  </label>
+                  <label className="form-label">
+                    关键元素（逗号分隔）
+                    <input type="text" className="form-input" value={addPageForm.keyElements} onChange={(e) => setAddPageForm((f) => ({ ...f, keyElements: e.target.value }))} placeholder="如：导航栏, 搜索框, 商品列表" />
+                  </label>
+                  <label className="form-label">
+                    布局描述
+                    <input type="text" className="form-input" value={addPageForm.layoutDescription} onChange={(e) => setAddPageForm((f) => ({ ...f, layoutDescription: e.target.value }))} placeholder="如：顶部导航 + 左侧菜单 + 主内容区" />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-secondary" onClick={() => { setShowAddPageModal(false); setAddPageForm({ name: '', description: '', keyElements: '', layoutDescription: '' }) }}>取消</button>
+                  <button className="btn-primary" onClick={handleAddCustomPage} disabled={!addPageForm.name.trim()}>添加页面</button>
                 </div>
               </div>
             </div>

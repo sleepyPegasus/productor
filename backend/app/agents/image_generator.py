@@ -71,11 +71,19 @@ def _extract_image_url(data: dict) -> str | None:
     return None
 
 
-async def generate_image(prompt: str, model: str = None, size: str = "1024x1024") -> str | None:
+async def generate_image(
+    prompt: str,
+    model: str = None,
+    size: str = "1024x1024",
+    reference_image: str = "",
+) -> str | None:
     """Generate an image via OpenRouter and return the image data URL.
 
     Uses the /chat/completions endpoint with modalities parameter,
     which is OpenRouter's unified approach for image generation.
+
+    If ``reference_image`` is provided (a data URL or HTTP URL), it is included
+    as a multimodal content part so the model can use it as visual reference.
     """
     if not settings.OPENROUTER_API_KEY:
         logger.warning("OPENROUTER_API_KEY is not configured, cannot generate image")
@@ -88,10 +96,20 @@ async def generate_image(prompt: str, model: str = None, size: str = "1024x1024"
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
+
+    # Build message content – multimodal when reference image is provided
+    if reference_image:
+        content = [
+            {"type": "text", "text": f"请参考以下图片的设计风格和布局来生成新的界面设计图。\n\n{prompt}"},
+            {"type": "image_url", "image_url": {"url": reference_image}},
+        ]
+    else:
+        content = prompt
+
     payload = {
         "model": image_model,
         "messages": [
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": content},
         ],
         "modalities": ["image", "text"],
     }
