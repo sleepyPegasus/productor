@@ -14,3 +14,4 @@ python-pptx==1.0.2
 fpdf2==2.8.5
 markdown==3.7
 beautifulsoup4==4.12.3
+Pillow==11.1.0

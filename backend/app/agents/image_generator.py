@@ -1,13 +1,68 @@
 """Image generation client via OpenRouter (chat completions with modalities)."""
 
+import base64
+import io
 import logging
 import re
 
 import httpx
+from PIL import Image
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Maximum dimension (width or height) for reference images sent to the API.
+_MAX_REF_IMAGE_DIMENSION = 1024
+# JPEG quality for compressed reference images.
+_REF_IMAGE_QUALITY = 80
+
+
+def _compress_reference_image(data_url: str) -> str:
+    """Compress and resize a base64 data-URL reference image.
+
+    Large reference images can cause the upstream API server to disconnect
+    because the JSON payload becomes too big.  This function decodes the
+    data URL, resizes the image so its longest side is at most
+    ``_MAX_REF_IMAGE_DIMENSION`` pixels, re-encodes it as JPEG, and returns
+    a new ``data:image/jpeg;base64,...`` string.
+    """
+    try:
+        # Parse the data URL header  ("data:image/png;base64,<payload>")
+        header, encoded = data_url.split(",", 1)
+        raw = base64.b64decode(encoded)
+
+        img = Image.open(io.BytesIO(raw))
+        img = img.convert("RGB")  # ensure no alpha channel for JPEG
+
+        # Resize if larger than the limit
+        w, h = img.size
+        longest = max(w, h)
+        if longest > _MAX_REF_IMAGE_DIMENSION:
+            scale = _MAX_REF_IMAGE_DIMENSION / longest
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            logger.info(
+                "Reference image resized from %dx%d to %dx%d",
+                w, h, new_w, new_h,
+            )
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=_REF_IMAGE_QUALITY)
+        compressed = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        original_kb = len(encoded) * 3 // 4 // 1024
+        compressed_kb = len(compressed) * 3 // 4 // 1024
+        logger.info(
+            "Reference image compressed: ~%d KB -> ~%d KB",
+            original_kb, compressed_kb,
+        )
+
+        return f"data:image/jpeg;base64,{compressed}"
+    except Exception as e:
+        logger.warning("Failed to compress reference image, using original: %s", e)
+        return data_url
 
 
 def _extract_image_url(data: dict) -> str | None:
@@ -99,9 +154,12 @@ async def generate_image(
 
     # Build message content – multimodal when reference image is provided
     if reference_image:
+        # Compress reference image to avoid oversized payloads that cause
+        # the upstream API server to disconnect.
+        compressed_ref = _compress_reference_image(reference_image)
         content = [
             {"type": "text", "text": f"请参考以下图片的设计风格和布局来生成新的界面设计图。\n\n{prompt}"},
-            {"type": "image_url", "image_url": {"url": reference_image}},
+            {"type": "image_url", "image_url": {"url": compressed_ref}},
         ]
     else:
         content = prompt
@@ -114,8 +172,12 @@ async def generate_image(
         "modalities": ["image", "text"],
     }
 
+    # Use granular timeouts: longer read timeout for image generation which
+    # can take a while, especially with multimodal input.
+    timeout = httpx.Timeout(connect=30, write=60, read=300, pool=30)
+
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
