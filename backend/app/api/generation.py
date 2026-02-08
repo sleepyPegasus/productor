@@ -36,6 +36,7 @@ class SinglePageDesignRequest(BaseModel):
     image_resolution: str = Field(default="", description="Image resolution e.g. '1920x1080'")
     image_ratio: str = Field(default="", description="Image aspect ratio e.g. '16:9'")
     image_extra_requirements: str = Field(default="", description="Additional requirements for image generation")
+    reference_image: str = Field(default="", description="Reference image as base64 data URL for guiding generation")
 
 
 @router.post("/{project_id}/generate")
@@ -209,8 +210,12 @@ async def api_revise_prd(project_id: str, body: ReviseWithVersionRequest):
     )
 
 
+class BatchDesignRequest(BaseModel):
+    global_style: str = Field(default="", description="Global UI style requirements applied to all pages")
+
+
 @router.post("/{project_id}/generate-designs")
-async def api_generate_designs(project_id: str):
+async def api_generate_designs(project_id: str, body: BatchDesignRequest = None):
     """Generate UI design images based on project's PRD and requirement.
 
     Streams SSE events:
@@ -251,6 +256,10 @@ async def api_generate_designs(project_id: str):
         else:
             pages_plan = active_pages
 
+    global_style = ""
+    if body and body.global_style:
+        global_style = body.global_style
+
     async def event_stream():
         all_images = []
 
@@ -258,6 +267,7 @@ async def api_generate_designs(project_id: str):
             async for event_str in run_design_generation_stream(
                 structured, pages_plan, project["prd_content"],
                 chat_model=chat_model, image_model=image_model,
+                global_style=global_style,
             ):
                 event = json.loads(event_str)
 
@@ -346,6 +356,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
     image_resolution = body.image_resolution or ""
     image_ratio = body.image_ratio or ""
     image_extra_requirements = body.image_extra_requirements or ""
+    reference_image = body.reference_image or ""
 
     async def event_stream():
         image_data = None
@@ -355,6 +366,7 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
                 target_page, product_name=product_name, image_model=image_model,
                 image_resolution=image_resolution, image_ratio=image_ratio,
                 image_extra_requirements=image_extra_requirements,
+                reference_image=reference_image,
             ):
                 event = json.loads(event_str)
 

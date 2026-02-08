@@ -1805,6 +1805,145 @@
   color: var(--text);
 }
 
+/* -------- Reference Image Upload -------- */
+.form-hint {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.form-file-input {
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.form-file-input:hover {
+  border-color: var(--primary);
+}
+
+.reference-image-preview {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.reference-image-preview img {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  object-fit: contain;
+  display: block;
+}
+.btn-remove-ref-image {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-remove-ref-image:hover {
+  background: var(--danger);
+}
+
+.config-tag-ref {
+  color: #059669;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+/* -------- Add Page Button -------- */
+.btn-add-page {
+  background: #ecfdf5;
+  color: #059669;
+}
+.btn-add-page:hover {
+  background: #d1fae5;
+}
+
+/* -------- Global Style Button & Indicator -------- */
+.btn-global-style {
+  background: #faf5ff;
+  color: #7c3aed;
+}
+.btn-global-style:hover {
+  background: #f3e8ff;
+}
+.btn-global-style-active {
+  background: #7c3aed;
+  color: #fff;
+}
+.btn-global-style-active:hover {
+  background: #6d28d9;
+}
+
+.global-style-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f0f9ff 100%);
+  border-bottom: 1px solid #e9d5ff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.global-style-indicator:hover {
+  background: linear-gradient(135deg, #f3e8ff 0%, #e0f2fe 100%);
+}
+
+.global-style-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7c3aed;
+  flex-shrink: 0;
+}
+
+.global-style-text {
+  font-size: 12px;
+  color: #7c3aed;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-style-tag {
+  font-size: 10px;
+  color: #7c3aed;
+  background: #f5f3ff;
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid #e9d5ff;
+  flex-shrink: 0;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* -------- Modal Description -------- */
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: -8px 0 4px;
+  line-height: 1.5;
+}
+
 /* -------- Error page -------- */
 .workspace-error {
   display: flex;

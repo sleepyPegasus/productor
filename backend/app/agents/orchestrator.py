@@ -401,6 +401,7 @@ async def run_design_generation_stream(
     prd_content: str,
     chat_model: str = None,
     image_model: str = None,
+    global_style: str = "",
 ) -> AsyncGenerator[str, None]:
     """Generate UI design images as a standalone step.
 
@@ -451,7 +452,7 @@ async def run_design_generation_stream(
     async def gen_one(page, idx):
         page_id = page.get("id", f"page_{idx}")
         page_name = page.get("name", f"页面{idx + 1}")
-        prompt = _build_image_prompt(page, product_name)
+        prompt = _build_image_prompt(page, product_name, image_extra_requirements=global_style)
         try:
             async with semaphore:
                 url = await generate_image(prompt, model=image_model)
@@ -502,6 +503,7 @@ async def run_single_page_design_stream(
     image_resolution: str = "",
     image_ratio: str = "",
     image_extra_requirements: str = "",
+    reference_image: str = "",
 ) -> AsyncGenerator[str, None]:
     """Generate a design image for a single page.
 
@@ -527,7 +529,7 @@ async def run_single_page_design_stream(
         image_resolution=image_resolution, image_ratio=image_ratio,
         image_extra_requirements=image_extra_requirements,
     )
-    url = await generate_image(prompt, model=image_model)
+    url = await generate_image(prompt, model=image_model, reference_image=reference_image)
 
     if url:
         image_data = {
