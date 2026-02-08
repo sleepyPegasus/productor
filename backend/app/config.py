@@ -14,6 +14,18 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./productor.db")
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
 
+    # JWT / Auth
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "productor-secret-key-change-in-production")
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "72"))
+
+    # SMTP (for email verification - leave empty to use console output for dev)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@productor.local")
+
     # Available models for selection
     CHAT_MODELS: list = [
         {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat"},

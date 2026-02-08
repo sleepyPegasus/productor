@@ -9,13 +9,18 @@ import {
   getPrdVersions, getPrdVersionContent,
   getDesignVersions, getDesignVersionImages,
   getComprehensiveVersions, getComprehensiveVersionContent,
+  fetchProjectPermissions,
 } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 import './PRDWorkspace.css'
 
 export default function PRDWorkspace() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
+  const [userPermission, setUserPermission] = useState(null) // 'owner', 'edit', 'view'
+  const canEdit = userPermission === 'owner' || userPermission === 'edit' || user?.is_admin
 
   // Tab state: 'prd', 'design', or 'comprehensive'
   const initialTab = searchParams.get('tab') || 'prd'
@@ -146,6 +151,21 @@ export default function PRDWorkspace() {
         setProject(proj)
         setPrdContent(proj.prd_content || '')
         setMessages(chat)
+        // Determine user permission
+        if (user?.is_admin) {
+          setUserPermission('owner')
+        } else if (proj.owner_id === user?.id) {
+          setUserPermission('owner')
+        } else {
+          // Check permissions from API
+          try {
+            const perms = await fetchProjectPermissions(id)
+            const myPerm = perms.find((p) => p.user_id === user?.id)
+            setUserPermission(myPerm ? myPerm.permission : 'view')
+          } catch {
+            setUserPermission('view')
+          }
+        }
         if (proj.design_images) {
           try {
             const images = JSON.parse(proj.design_images)

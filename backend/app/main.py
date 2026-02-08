@@ -8,12 +8,15 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import router as auth_router
 from app.api.export import router as export_router
 from app.api.generation import router as generation_router
+from app.api.permissions import router as permissions_router
 from app.api.projects import router as projects_router
 from app.api.skills import router as skills_router
+from app.api.users import router as users_router
 from app.config import settings
-from app.db.database import init_db
+from app.db.database import init_db, init_admin_user
 from app.models.schemas import ModelsResponse
 from app.services.skill_service import init_default_skills
 
@@ -106,6 +109,7 @@ async def _fetch_openrouter_models() -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    init_admin_user()
     init_default_skills()
     yield
 
@@ -125,7 +129,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(projects_router)
+app.include_router(permissions_router)
 app.include_router(generation_router)
 app.include_router(export_router)
 app.include_router(skills_router)

@@ -3,13 +3,14 @@
 import json
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.db.database import get_project
 from app.services.docx_exporter import markdown_to_docx
 from app.services.comprehensive_exporter import generate_comprehensive_doc
+from app.api.deps import get_current_user, check_project_permission
 
 router = APIRouter(prefix="/api/projects", tags=["export"])
 
@@ -19,14 +20,12 @@ class ComprehensiveExportRequest(BaseModel):
 
 
 @router.get("/{project_id}/export/docx")
-async def api_export_docx(project_id: str):
-    """Export PRD content as a Word (.docx) document.
-
-    Downloads and embeds any images referenced in the markdown.
-    """
+async def api_export_docx(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Export PRD content as a Word (.docx) document."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "view")
 
     prd_content = project.get("prd_content", "")
     if not prd_content:
@@ -53,14 +52,12 @@ async def api_export_docx(project_id: str):
 
 
 @router.post("/{project_id}/export/comprehensive")
-async def api_export_comprehensive(project_id: str, body: ComprehensiveExportRequest):
-    """Export comprehensive product plan combining PRD and design images.
-
-    Supports Word (.docx), PDF, and PPT (.pptx) formats.
-    """
+async def api_export_comprehensive(project_id: str, body: ComprehensiveExportRequest, current_user: dict = Depends(get_current_user)):
+    """Export comprehensive product plan combining PRD and design images."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "view")
 
     prd_content = project.get("prd_content", "")
     if not prd_content:

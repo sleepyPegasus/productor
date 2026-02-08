@@ -3,7 +3,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from openai import AuthenticationError as OpenAIAuthError
 from pydantic import BaseModel, Field
@@ -27,6 +27,7 @@ from app.db.database import (
     update_project,
 )
 from app.models.schemas import ChatRequest, ReviseWithVersionRequest
+from app.api.deps import get_current_user, check_project_permission
 
 router = APIRouter(prefix="/api/projects", tags=["generation"])
 
@@ -40,21 +41,12 @@ class SinglePageDesignRequest(BaseModel):
 
 
 @router.post("/{project_id}/generate")
-async def api_generate_prd(project_id: str, body: ChatRequest):
-    """Start full PRD generation pipeline.
-
-    Streams SSE events back to the client:
-      - status: progress messages
-      - requirement: structured requirement JSON
-      - pages_plan: page structure JSON
-      - token: individual PRD content tokens
-      - prd_complete: full PRD content
-      - done: pipeline finished
-      - result: final aggregated data
-    """
+async def api_generate_prd(project_id: str, body: ChatRequest, current_user: dict = Depends(get_current_user)):
+    """Start full PRD generation pipeline."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
 
     requirement = body.message
     append_chat_message(project_id, "user", requirement)
@@ -124,14 +116,12 @@ async def api_generate_prd(project_id: str, body: ChatRequest):
 
 
 @router.post("/{project_id}/revise")
-async def api_revise_prd(project_id: str, body: ReviseWithVersionRequest):
-    """Revise existing PRD based on user feedback.
-
-    Streams SSE events similar to generate.
-    """
+async def api_revise_prd(project_id: str, body: ReviseWithVersionRequest, current_user: dict = Depends(get_current_user)):
+    """Revise existing PRD based on user feedback."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
 
     if not project["prd_content"]:
         raise HTTPException(status_code=400, detail="请先生成 PRD")
@@ -225,17 +215,12 @@ class BatchDesignRequest(BaseModel):
 
 
 @router.post("/{project_id}/generate-designs")
-async def api_generate_designs(project_id: str, body: BatchDesignRequest = None):
-    """Generate UI design images based on project's PRD and requirement.
-
-    Streams SSE events:
-      - status: progress messages
-      - image: individual generated image data (page_id, page_name, image_url)
-      - done: generation finished with all images
-    """
+async def api_generate_designs(project_id: str, body: BatchDesignRequest = None, current_user: dict = Depends(get_current_user)):
+    """Generate UI design images based on project's PRD and requirement."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
 
     if not project["prd_content"]:
         raise HTTPException(status_code=400, detail="请先生成 PRD 文档")
@@ -316,18 +301,12 @@ async def api_generate_designs(project_id: str, body: BatchDesignRequest = None)
 
 
 @router.post("/{project_id}/generate-design-page")
-async def api_generate_single_page_design(project_id: str, body: SinglePageDesignRequest):
-    """Generate UI design image for a single page.
-
-    Streams SSE events:
-      - status: progress message
-      - image: generated image data (page_id, page_name, image_url)
-      - done: generation finished
-      - error: generation failed
-    """
+async def api_generate_single_page_design(project_id: str, body: SinglePageDesignRequest, current_user: dict = Depends(get_current_user)):
+    """Generate UI design image for a single page."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
 
     if not project["pages_plan"]:
         raise HTTPException(status_code=400, detail="请先生成 PRD 文档")
@@ -428,19 +407,12 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
 # ---------------------------------------------------------------------------
 
 @router.post("/{project_id}/generate-comprehensive")
-async def api_generate_comprehensive(project_id: str):
-    """Generate AI-integrated comprehensive product solution via SSE stream.
-
-    Streams SSE events:
-      - status: progress messages
-      - token: individual content tokens
-      - comprehensive_complete: full integrated content
-      - done: generation finished
-      - error: error messages
-    """
+async def api_generate_comprehensive(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate AI-integrated comprehensive product solution via SSE stream."""
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
 
     prd_content = project.get("prd_content", "")
     if not prd_content:

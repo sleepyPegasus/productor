@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
-  fetchSkills,
-  createSkill,
-  updateSkill,
-  deleteSkill,
-  resetSkill,
-  duplicateSkill,
+  Box, Typography, Button, Card, CardContent,
+  Grid, Chip, IconButton, Tabs, Tab, Switch,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  TextField, Select, MenuItem, FormControl, InputLabel,
+  Snackbar, Alert, CircularProgress, Tooltip, Paper,
+} from '@mui/material'
+import { ArrowBack, Add, Edit, ContentCopy, RestartAlt, Delete } from '@mui/icons-material'
+import {
+  fetchSkills, createSkill, updateSkill, deleteSkill,
+  resetSkill, duplicateSkill,
 } from '../services/api'
-import './SkillManagement.css'
 
 const CATEGORIES = [
   { value: '', label: '全部' },
@@ -21,7 +24,14 @@ const CATEGORIES = [
 const OUTPUT_FORMATS = ['text', 'json', 'markdown']
 const MODEL_TYPES = ['chat', 'image', 'multimodal']
 
-function SkillManagement() {
+function parseJSON(value, fallback) {
+  if (!value) return fallback
+  if (typeof value === 'object') return value
+  try { return JSON.parse(value) } catch { return fallback }
+}
+
+export default function SkillManagement() {
+  const navigate = useNavigate()
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterCategory, setFilterCategory] = useState('')
@@ -35,239 +45,151 @@ function SkillManagement() {
       const data = await fetchSkills(filterCategory || null)
       setSkills(data)
     } catch (err) {
-      showToast(err.message, 'error')
+      setToast({ msg: err.message, severity: 'error' })
     } finally {
       setLoading(false)
     }
   }, [filterCategory])
 
-  useEffect(() => {
-    loadSkills()
-  }, [loadSkills])
+  useEffect(() => { loadSkills() }, [loadSkills])
 
-  function showToast(msg, type = 'success') {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  const showToastMsg = (msg, severity = 'success') => setToast({ msg, severity })
 
-  async function handleToggleEnabled(skill) {
+  const handleToggleEnabled = async (skill) => {
     try {
       await updateSkill(skill.id, { is_enabled: !skill.is_enabled })
-      showToast(skill.is_enabled ? '已禁用' : '已启用')
+      showToastMsg(skill.is_enabled ? '已禁用' : '已启用')
       loadSkills()
-    } catch (err) {
-      showToast(err.message, 'error')
-    }
+    } catch (err) { showToastMsg(err.message, 'error') }
   }
 
-  async function handleDelete(skill) {
-    if (!confirm(`确定要删除技能「${skill.display_name}」吗？此操作不可恢复。`)) return
+  const handleDelete = async (skill) => {
+    if (!window.confirm(`确定要删除技能「${skill.display_name}」吗？此操作不可恢复。`)) return
     try {
       await deleteSkill(skill.id)
-      showToast('删除成功')
+      showToastMsg('删除成功')
       loadSkills()
-    } catch (err) {
-      showToast(err.message, 'error')
-    }
+    } catch (err) { showToastMsg(err.message, 'error') }
   }
 
-  async function handleReset(skill) {
-    if (!confirm(`确定要将「${skill.display_name}」重置为出厂默认设置吗？所有自定义修改将丢失。`)) return
+  const handleReset = async (skill) => {
+    if (!window.confirm(`确定要将「${skill.display_name}」重置为出厂默认设置吗？`)) return
     try {
       await resetSkill(skill.id)
-      showToast('已重置为默认')
+      showToastMsg('已重置为默认')
       loadSkills()
-    } catch (err) {
-      showToast(err.message, 'error')
-    }
+    } catch (err) { showToastMsg(err.message, 'error') }
   }
 
-  async function handleDuplicate(skill) {
+  const handleDuplicate = async (skill) => {
     try {
       await duplicateSkill(skill.id)
-      showToast('复制成功')
+      showToastMsg('复制成功')
       loadSkills()
-    } catch (err) {
-      showToast(err.message, 'error')
-    }
+    } catch (err) { showToastMsg(err.message, 'error') }
   }
 
-  function getCategoryLabel(cat) {
+  const getCategoryLabel = (cat) => {
     const found = CATEGORIES.find((c) => c.value === cat)
     return found ? found.label : cat
   }
 
   return (
-    <div className="skill-management-page">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3 }}>
       {/* Header */}
-      <div className="skill-page-header">
-        <div className="skill-header-left">
-          <h1>技能管理</h1>
-          <span className="subtitle">
-            管理和编辑 AI 技能的提示词、参数和配置
-          </span>
-        </div>
-        <div className="skill-header-actions">
-          <Link to="/" className="back-link">
-            ← 返回项目
-          </Link>
-          <button
-            className="btn-primary"
-            onClick={() => setShowCreateModal(true)}
-          >
-            + 新建技能
-          </button>
-        </div>
-      </div>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={600}>技能管理</Typography>
+          <Typography variant="body2" color="text.secondary">管理和编辑 AI 技能的提示词、参数和配置</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button startIcon={<ArrowBack />} variant="outlined" onClick={() => navigate('/')}>返回项目</Button>
+          <Button startIcon={<Add />} variant="contained" onClick={() => setShowCreateModal(true)}>新建技能</Button>
+        </Box>
+      </Box>
 
-      {/* Filter */}
-      <div className="skill-filter-toolbar">
-        <div className="skill-category-tabs">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.value}
-              className={`skill-category-tab ${filterCategory === cat.value ? 'skill-category-tab-active' : ''}`}
-              onClick={() => setFilterCategory(cat.value)}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Category filter */}
+      <Tabs
+        value={CATEGORIES.findIndex((c) => c.value === filterCategory)}
+        onChange={(_, v) => setFilterCategory(CATEGORIES[v].value)}
+        sx={{ mb: 3 }}
+      >
+        {CATEGORIES.map((cat) => <Tab key={cat.value} label={cat.label} />)}
+      </Tabs>
 
       {/* Grid */}
       {loading ? (
-        <div className="skill-empty-state">
-          <p>加载中...</p>
-        </div>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
       ) : skills.length === 0 ? (
-        <div className="skill-empty-state">
-          <div className="skill-empty-icon">&#9881;</div>
-          <p>暂无技能</p>
-        </div>
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <Typography variant="h6" color="text.secondary">暂无技能</Typography>
+        </Paper>
       ) : (
-        <div className="skill-grid">
+        <Grid container spacing={2}>
           {skills.map((skill) => (
-            <div
-              key={skill.id}
-              className={`skill-card ${!skill.is_enabled ? 'skill-card-disabled' : ''}`}
-            >
-              <div className="skill-card-header">
-                <h3>{skill.display_name}</h3>
-                <div className="skill-badges">
-                  {skill.is_builtin ? (
-                    <span className="skill-badge skill-badge-builtin">内置</span>
-                  ) : (
-                    <span className="skill-badge skill-badge-custom">自定义</span>
-                  )}
-                  <span className="skill-badge skill-badge-category">
-                    {getCategoryLabel(skill.category)}
-                  </span>
-                  {!skill.is_enabled && (
-                    <span className="skill-badge skill-badge-disabled">已禁用</span>
-                  )}
-                </div>
-              </div>
-
-              <p className="skill-card-desc">{skill.description || '暂无描述'}</p>
-
-              <div className="skill-card-meta">
-                <span className="skill-meta-item">
-                  <span className="skill-meta-label">标识:</span> {skill.name}
-                </span>
-                <span className="skill-meta-item">
-                  <span className="skill-meta-label">输出:</span> {skill.output_format}
-                </span>
-                <span className="skill-meta-item">
-                  <span className="skill-meta-label">版本:</span> v{skill.version}
-                </span>
-              </div>
-
-              <div className="skill-card-actions">
-                <button
-                  className="skill-action-btn"
-                  onClick={() => setEditingSkill(skill)}
-                >
-                  编辑
-                </button>
-                <button
-                  className="skill-action-btn"
-                  onClick={() => handleDuplicate(skill)}
-                >
-                  复制
-                </button>
-                {skill.is_builtin && (
-                  <button
-                    className="skill-action-btn"
-                    onClick={() => handleReset(skill)}
-                  >
-                    重置
-                  </button>
-                )}
-                <label className="toggle-switch" title={skill.is_enabled ? '禁用' : '启用'}>
-                  <input
-                    type="checkbox"
-                    checked={skill.is_enabled}
-                    onChange={() => handleToggleEnabled(skill)}
-                  />
-                  <span className="toggle-slider"></span>
-                </label>
-                {!skill.is_builtin && (
-                  <button
-                    className="skill-action-btn btn-danger-text"
-                    onClick={() => handleDelete(skill)}
-                  >
-                    删除
-                  </button>
-                )}
-              </div>
-            </div>
+            <Grid item xs={12} sm={6} md={4} key={skill.id}>
+              <Card sx={{ opacity: skill.is_enabled ? 1 : 0.6 }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Typography variant="subtitle1" fontWeight={600}>{skill.display_name}</Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                      <Chip label={skill.is_builtin ? '内置' : '自定义'} size="small" color={skill.is_builtin ? 'primary' : 'default'} variant="outlined" />
+                      <Chip label={getCategoryLabel(skill.category)} size="small" />
+                      {!skill.is_enabled && <Chip label="已禁用" size="small" color="error" variant="outlined" />}
+                    </Box>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, minHeight: 40, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {skill.description || '暂无描述'}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
+                    <Typography variant="caption" color="text.secondary">标识: {skill.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">输出: {skill.output_format}</Typography>
+                    <Typography variant="caption" color="text.secondary">v{skill.version}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                    <Tooltip title="编辑"><IconButton size="small" onClick={() => setEditingSkill(skill)}><Edit fontSize="small" /></IconButton></Tooltip>
+                    <Tooltip title="复制"><IconButton size="small" onClick={() => handleDuplicate(skill)}><ContentCopy fontSize="small" /></IconButton></Tooltip>
+                    {skill.is_builtin && <Tooltip title="重置"><IconButton size="small" onClick={() => handleReset(skill)}><RestartAlt fontSize="small" /></IconButton></Tooltip>}
+                    <Switch size="small" checked={skill.is_enabled} onChange={() => handleToggleEnabled(skill)} />
+                    {!skill.is_builtin && <Tooltip title="删除"><IconButton size="small" color="error" onClick={() => handleDelete(skill)}><Delete fontSize="small" /></IconButton></Tooltip>}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
           ))}
-        </div>
+        </Grid>
       )}
 
-      {/* Edit modal */}
+      {/* Edit Modal */}
       {editingSkill && (
-        <SkillEditModal
+        <SkillEditDialog
           skill={editingSkill}
           onClose={() => setEditingSkill(null)}
-          onSaved={() => {
-            setEditingSkill(null)
-            showToast('保存成功')
-            loadSkills()
-          }}
-          onError={(msg) => showToast(msg, 'error')}
+          onSaved={() => { setEditingSkill(null); showToastMsg('保存成功'); loadSkills() }}
+          onError={(msg) => showToastMsg(msg, 'error')}
         />
       )}
 
-      {/* Create modal */}
+      {/* Create Modal */}
       {showCreateModal && (
-        <SkillCreateModal
+        <SkillCreateDialog
           onClose={() => setShowCreateModal(false)}
-          onCreated={() => {
-            setShowCreateModal(false)
-            showToast('创建成功')
-            loadSkills()
-          }}
-          onError={(msg) => showToast(msg, 'error')}
+          onCreated={() => { setShowCreateModal(false); showToastMsg('创建成功'); loadSkills() }}
+          onError={(msg) => showToastMsg(msg, 'error')}
         />
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div className={`skill-toast skill-toast-${toast.type}`}>
-          {toast.msg}
-        </div>
-      )}
-    </div>
+      <Snackbar open={!!toast} autoHideDuration={3000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        {toast && <Alert severity={toast.severity} onClose={() => setToast(null)}>{toast.msg}</Alert>}
+      </Snackbar>
+    </Box>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Edit Modal
-// ---------------------------------------------------------------------------
 
-function SkillEditModal({ skill, onClose, onSaved, onError }) {
+function SkillEditDialog({ skill, onClose, onSaved, onError }) {
   const [form, setForm] = useState(() => ({
     display_name: skill.display_name || '',
     description: skill.description || '',
@@ -282,398 +204,188 @@ function SkillEditModal({ skill, onClose, onSaved, onError }) {
   }))
   const [saving, setSaving] = useState(false)
 
-  function set(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
+  const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
-  async function handleSave() {
+  const handleSave = async () => {
     setSaving(true)
     try {
       const updates = {
-        display_name: form.display_name,
-        description: form.description,
-        category: form.category,
-        system_prompt: form.system_prompt,
+        display_name: form.display_name, description: form.description,
+        category: form.category, system_prompt: form.system_prompt,
         user_prompt_template: form.user_prompt_template,
-        output_format: form.output_format,
-        model_type: form.model_type,
-        parameters: form.parameters,
-        input_variables: form.input_variables,
+        output_format: form.output_format, model_type: form.model_type,
+        parameters: form.parameters, input_variables: form.input_variables,
       }
-      // Parse extra_data if it's a string
       if (typeof form.extra_data === 'string') {
-        try {
-          updates.extra_data = JSON.parse(form.extra_data)
-        } catch {
-          updates.extra_data = {}
-        }
+        try { updates.extra_data = JSON.parse(form.extra_data) } catch { updates.extra_data = {} }
       } else {
         updates.extra_data = form.extra_data
       }
       await updateSkill(skill.id, updates)
       onSaved()
-    } catch (err) {
-      onError(err.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { onError(err.message) } finally { setSaving(false) }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal skill-edit-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>编辑技能: {skill.display_name}</h2>
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>编辑技能: {skill.display_name}</DialogTitle>
+      <DialogContent>
+        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+          <Grid item xs={6}>
+            <TextField fullWidth label="显示名称" value={form.display_name} onChange={(e) => set('display_name', e.target.value)} />
+          </Grid>
+          <Grid item xs={6}>
+            <FormControl fullWidth>
+              <InputLabel>分类</InputLabel>
+              <Select value={form.category} label="分类" onChange={(e) => set('category', e.target.value)}>
+                {CATEGORIES.filter((c) => c.value).map((c) => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+        <TextField fullWidth label="描述" multiline rows={2} value={form.description} onChange={(e) => set('description', e.target.value)} sx={{ mt: 2 }} />
 
-        {/* Basic info */}
-        <div className="skill-form-row">
-          <div className="skill-form-group">
-            <label>显示名称</label>
-            <input
-              value={form.display_name}
-              onChange={(e) => set('display_name', e.target.value)}
+        <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>提示词配置</Typography>
+        <TextField fullWidth label="System Prompt" multiline rows={3} value={form.system_prompt} onChange={(e) => set('system_prompt', e.target.value)} sx={{ mb: 2 }} helperText="定义 AI 的角色和行为规则" />
+        <TextField fullWidth label="User Prompt Template" multiline rows={8} value={form.user_prompt_template} onChange={(e) => set('user_prompt_template', e.target.value)} helperText="使用 {变量名} 作为占位符" />
+
+        <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>模型参数</Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>输出格式</InputLabel>
+              <Select value={form.output_format} label="输出格式" onChange={(e) => set('output_format', e.target.value)}>
+                {OUTPUT_FORMATS.map((f) => <MenuItem key={f} value={f}>{f}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>模型类型</InputLabel>
+              <Select value={form.model_type} label="模型类型" onChange={(e) => set('model_type', e.target.value)}>
+                {MODEL_TYPES.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={4}>
+            <TextField fullWidth size="small" label="Temperature" type="number" inputProps={{ step: 0.1, min: 0, max: 2 }}
+              value={form.parameters.temperature ?? 0.5}
+              onChange={(e) => set('parameters', { ...form.parameters, temperature: parseFloat(e.target.value) || 0 })}
             />
-          </div>
-          <div className="skill-form-group">
-            <label>分类</label>
-            <select
-              value={form.category}
-              onChange={(e) => set('category', e.target.value)}
-            >
-              {CATEGORIES.filter((c) => c.value).map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="skill-form-group">
-          <label>描述</label>
-          <textarea
-            rows={2}
-            value={form.description}
-            onChange={(e) => set('description', e.target.value)}
-            style={{ fontFamily: 'inherit', minHeight: '60px' }}
-          />
-        </div>
-
-        {/* Prompt section */}
-        <div className="skill-form-section">
-          <h3>提示词配置</h3>
-
-          <div className="skill-form-group">
-            <label>System Prompt (系统提示词)</label>
-            <textarea
-              rows={4}
-              value={form.system_prompt}
-              onChange={(e) => set('system_prompt', e.target.value)}
+          </Grid>
+        </Grid>
+        <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid item xs={6}>
+            <TextField fullWidth size="small" label="Max Tokens" type="number" inputProps={{ step: 1024, min: 256, max: 131072 }}
+              value={form.parameters.max_tokens ?? 8192}
+              onChange={(e) => set('parameters', { ...form.parameters, max_tokens: parseInt(e.target.value) || 8192 })}
             />
-            <div className="form-hint">定义 AI 的角色和行为规则</div>
-          </div>
-
-          <div className="skill-form-group">
-            <label>User Prompt Template (用户提示词模板)</label>
-            <textarea
-              rows={12}
-              value={form.user_prompt_template}
-              onChange={(e) => set('user_prompt_template', e.target.value)}
+          </Grid>
+          <Grid item xs={6}>
+            <TextField fullWidth size="small" label="输入变量" value={(form.input_variables || []).join(', ')}
+              onChange={(e) => set('input_variables', e.target.value.split(',').map((v) => v.trim()).filter(Boolean))}
+              helperText="逗号分隔"
             />
-            <div className="form-hint">
-              使用 {'{'}<var>变量名</var>{'}'} 作为占位符，如: {'{requirement}'}, {'{structured_requirement}'}
-            </div>
-          </div>
-        </div>
+          </Grid>
+        </Grid>
 
-        {/* Model parameters */}
-        <div className="skill-form-section">
-          <h3>模型参数</h3>
-          <div className="skill-form-row-3">
-            <div className="skill-form-group">
-              <label>输出格式</label>
-              <select
-                value={form.output_format}
-                onChange={(e) => set('output_format', e.target.value)}
-              >
-                {OUTPUT_FORMATS.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </div>
-            <div className="skill-form-group">
-              <label>模型类型</label>
-              <select
-                value={form.model_type}
-                onChange={(e) => set('model_type', e.target.value)}
-              >
-                {MODEL_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="skill-form-group">
-              <label>Temperature</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                value={form.parameters.temperature ?? 0.5}
-                onChange={(e) =>
-                  set('parameters', {
-                    ...form.parameters,
-                    temperature: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-
-          <div className="skill-form-row">
-            <div className="skill-form-group">
-              <label>Max Tokens</label>
-              <input
-                type="number"
-                step="1024"
-                min="256"
-                max="131072"
-                value={form.parameters.max_tokens ?? 8192}
-                onChange={(e) =>
-                  set('parameters', {
-                    ...form.parameters,
-                    max_tokens: parseInt(e.target.value) || 8192,
-                  })
-                }
-              />
-            </div>
-            <div className="skill-form-group">
-              <label>输入变量</label>
-              <input
-                value={(form.input_variables || []).join(', ')}
-                onChange={(e) =>
-                  set(
-                    'input_variables',
-                    e.target.value.split(',').map((v) => v.trim()).filter(Boolean)
-                  )
-                }
-              />
-              <div className="form-hint">逗号分隔，如: requirement, structured_requirement</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Extra data (for PRD template etc.) */}
-        <div className="skill-form-section">
-          <h3>附加数据 (Extra Data)</h3>
-          <div className="skill-form-group">
-            <label>JSON 格式的附加配置</label>
-            <textarea
-              rows={6}
-              value={
-                typeof form.extra_data === 'string'
-                  ? form.extra_data
-                  : JSON.stringify(form.extra_data, null, 2)
-              }
-              onChange={(e) => set('extra_data', e.target.value)}
-            />
-            <div className="form-hint">
-              如 PRD 模板等附加数据，JSON 格式。例: {`{"prd_template": "..."}`}
-            </div>
-          </div>
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
+        <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>附加数据 (Extra Data)</Typography>
+        <TextField fullWidth multiline rows={4} label="JSON 格式"
+          value={typeof form.extra_data === 'string' ? form.extra_data : JSON.stringify(form.extra_data, null, 2)}
+          onChange={(e) => set('extra_data', e.target.value)}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>取消</Button>
+        <Button variant="contained" onClick={handleSave} disabled={saving}>
+          {saving ? <CircularProgress size={20} /> : '保存'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Create Modal
-// ---------------------------------------------------------------------------
-
-function SkillCreateModal({ onClose, onCreated, onError }) {
+function SkillCreateDialog({ onClose, onCreated, onError }) {
   const [form, setForm] = useState({
-    name: '',
-    display_name: '',
-    description: '',
-    category: 'general',
-    system_prompt: '',
-    user_prompt_template: '',
-    output_format: 'text',
-    model_type: 'chat',
+    name: '', display_name: '', description: '', category: 'general',
+    system_prompt: '', user_prompt_template: '', output_format: 'text', model_type: 'chat',
   })
   const [saving, setSaving] = useState(false)
 
-  function set(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
+  const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
-  async function handleCreate() {
-    if (!form.name || !form.display_name) {
-      onError('请填写技能标识和显示名称')
-      return
-    }
+  const handleCreate = async () => {
+    if (!form.name || !form.display_name) { onError('请填写技能标识和显示名称'); return }
     setSaving(true)
     try {
       await createSkill({
-        name: form.name,
-        display_name: form.display_name,
-        description: form.description,
-        category: form.category,
-        system_prompt: form.system_prompt,
+        name: form.name, display_name: form.display_name, description: form.description,
+        category: form.category, system_prompt: form.system_prompt,
         user_prompt_template: form.user_prompt_template,
-        output_format: form.output_format,
-        model_type: form.model_type,
-        parameters: { temperature: 0.5, max_tokens: 8192 },
-        input_variables: [],
+        output_format: form.output_format, model_type: form.model_type,
+        parameters: { temperature: 0.5, max_tokens: 8192 }, input_variables: [],
       })
       onCreated()
-    } catch (err) {
-      onError(err.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { onError(err.message) } finally { setSaving(false) }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal skill-edit-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>新建技能</h2>
-
-        <div className="skill-form-row">
-          <div className="skill-form-group">
-            <label>
-              技能标识 <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <input
-              value={form.name}
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>新建技能</DialogTitle>
+      <DialogContent>
+        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+          <Grid item xs={6}>
+            <TextField fullWidth label="技能标识" required value={form.name}
               onChange={(e) => set('name', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
-              placeholder="如: my_custom_skill"
+              placeholder="如: my_custom_skill" helperText="小写字母、数字和下划线"
             />
-            <div className="form-hint">小写字母、数字和下划线，创建后不可修改</div>
-          </div>
-          <div className="skill-form-group">
-            <label>
-              显示名称 <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <input
-              value={form.display_name}
-              onChange={(e) => set('display_name', e.target.value)}
-              placeholder="如: 自定义分析"
+          </Grid>
+          <Grid item xs={6}>
+            <TextField fullWidth label="显示名称" required value={form.display_name}
+              onChange={(e) => set('display_name', e.target.value)} placeholder="如: 自定义分析"
             />
-          </div>
-        </div>
+          </Grid>
+        </Grid>
+        <TextField fullWidth label="描述" multiline rows={2} value={form.description}
+          onChange={(e) => set('description', e.target.value)} sx={{ mt: 2 }}
+        />
+        <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid item xs={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>分类</InputLabel>
+              <Select value={form.category} label="分类" onChange={(e) => set('category', e.target.value)}>
+                {CATEGORIES.filter((c) => c.value).map((c) => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>输出格式</InputLabel>
+              <Select value={form.output_format} label="输出格式" onChange={(e) => set('output_format', e.target.value)}>
+                {OUTPUT_FORMATS.map((f) => <MenuItem key={f} value={f}>{f}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>模型类型</InputLabel>
+              <Select value={form.model_type} label="模型类型" onChange={(e) => set('model_type', e.target.value)}>
+                {MODEL_TYPES.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
 
-        <div className="skill-form-group">
-          <label>描述</label>
-          <textarea
-            rows={2}
-            value={form.description}
-            onChange={(e) => set('description', e.target.value)}
-            style={{ fontFamily: 'inherit', minHeight: '60px' }}
-            placeholder="描述这个技能的功能和用途"
-          />
-        </div>
-
-        <div className="skill-form-row-3">
-          <div className="skill-form-group">
-            <label>分类</label>
-            <select
-              value={form.category}
-              onChange={(e) => set('category', e.target.value)}
-            >
-              {CATEGORIES.filter((c) => c.value).map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="skill-form-group">
-            <label>输出格式</label>
-            <select
-              value={form.output_format}
-              onChange={(e) => set('output_format', e.target.value)}
-            >
-              {OUTPUT_FORMATS.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
-          </div>
-          <div className="skill-form-group">
-            <label>模型类型</label>
-            <select
-              value={form.model_type}
-              onChange={(e) => set('model_type', e.target.value)}
-            >
-              {MODEL_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="skill-form-section">
-          <h3>提示词配置</h3>
-          <div className="skill-form-group">
-            <label>System Prompt</label>
-            <textarea
-              rows={3}
-              value={form.system_prompt}
-              onChange={(e) => set('system_prompt', e.target.value)}
-              placeholder="定义 AI 的角色和行为规则"
-            />
-          </div>
-          <div className="skill-form-group">
-            <label>User Prompt Template</label>
-            <textarea
-              rows={6}
-              value={form.user_prompt_template}
-              onChange={(e) => set('user_prompt_template', e.target.value)}
-              placeholder="使用 {变量名} 作为占位符"
-            />
-          </div>
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn-primary" onClick={handleCreate} disabled={saving}>
-            {saving ? '创建中...' : '创建'}
-          </button>
-        </div>
-      </div>
-    </div>
+        <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>提示词配置</Typography>
+        <TextField fullWidth label="System Prompt" multiline rows={3} value={form.system_prompt} onChange={(e) => set('system_prompt', e.target.value)} sx={{ mb: 2 }} />
+        <TextField fullWidth label="User Prompt Template" multiline rows={5} value={form.user_prompt_template} onChange={(e) => set('user_prompt_template', e.target.value)} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>取消</Button>
+        <Button variant="contained" onClick={handleCreate} disabled={saving}>
+          {saving ? <CircularProgress size={20} /> : '创建'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function parseJSON(value, fallback) {
-  if (!value) return fallback
-  if (typeof value === 'object') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    return fallback
-  }
-}
-
-export default SkillManagement
