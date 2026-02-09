@@ -12,7 +12,7 @@ import {
   fetchProjectPermissions,
 } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
-import './PRDWorkspace.css'
+import './PRDWorkspace/PRDWorkspace.css'
 
 export default function PRDWorkspace() {
   const { id } = useParams()

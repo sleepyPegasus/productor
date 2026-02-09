@@ -5,6 +5,10 @@ load_dotenv()
 
 
 class Settings:
+    # Environment
+    ENV: str = os.getenv("ENV", "development")
+    IS_PRODUCTION: bool = ENV.lower() == "production"
+
     # OpenRouter unified API
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
@@ -14,10 +18,38 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./productor.db")
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
 
-    # JWT / Auth
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "productor-secret-key-change-in-production")
+    # JWT / Auth - Production requires explicit secret
+    _jwt_secret: str = os.getenv("JWT_SECRET", "")
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "72"))
+
+    @property
+    def JWT_SECRET(self) -> str:
+        if self.IS_PRODUCTION and not self._jwt_secret:
+            raise ValueError(
+                "JWT_SECRET environment variable is required in production. "
+                "Please set a secure secret key."
+            )
+        return self._jwt_secret or "dev-secret-key-not-for-production"
+
+    # CORS - Restrict in production
+    CORS_ALLOW_ORIGINS: str = os.getenv("CORS_ALLOW_ORIGINS", "")
+
+    @property
+    def ALLOWED_ORIGINS(self) -> list[str]:
+        """Parse CORS_ALLOW_ORIGINS env var into list."""
+        if self.IS_PRODUCTION:
+            if not self.CORS_ALLOW_ORIGINS:
+                raise ValueError(
+                    "CORS_ALLOW_ORIGINS environment variable is required in production. "
+                    "Example: https://app.example.com,https://admin.example.com"
+                )
+            return [origin.strip() for origin in self.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
+        # Development: allow localhost origins
+        origins = [origin.strip() for origin in self.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
+        if not origins:
+            origins = ["http://localhost:5173", "http://localhost:3000"]
+        return origins
 
     # SMTP (for email verification - leave empty to use console output for dev)
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")

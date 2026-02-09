@@ -3,7 +3,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from openai import AuthenticationError as OpenAIAuthError
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from app.agents.orchestrator import (
     run_design_generation_stream,
     run_single_page_design_stream,
 )
+from app.core.rate_limiter import generation_limiter, rate_limit
 from app.db.database import (
     append_chat_message,
     append_version_history,
@@ -41,7 +42,13 @@ class SinglePageDesignRequest(BaseModel):
 
 
 @router.post("/{project_id}/generate")
-async def api_generate_prd(project_id: str, body: ChatRequest, current_user: dict = Depends(get_current_user)):
+@rate_limit(generation_limiter)
+async def api_generate_prd(
+    project_id: str,
+    body: ChatRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Start full PRD generation pipeline."""
     project = get_project(project_id)
     if not project:
@@ -215,7 +222,13 @@ class BatchDesignRequest(BaseModel):
 
 
 @router.post("/{project_id}/generate-designs")
-async def api_generate_designs(project_id: str, body: BatchDesignRequest = None, current_user: dict = Depends(get_current_user)):
+@rate_limit(generation_limiter)
+async def api_generate_designs(
+    project_id: str,
+    request: Request,
+    body: BatchDesignRequest = None,
+    current_user: dict = Depends(get_current_user),
+):
     """Generate UI design images based on project's PRD and requirement."""
     project = get_project(project_id)
     if not project:
@@ -301,7 +314,13 @@ async def api_generate_designs(project_id: str, body: BatchDesignRequest = None,
 
 
 @router.post("/{project_id}/generate-design-page")
-async def api_generate_single_page_design(project_id: str, body: SinglePageDesignRequest, current_user: dict = Depends(get_current_user)):
+@rate_limit(generation_limiter)
+async def api_generate_single_page_design(
+    project_id: str,
+    body: SinglePageDesignRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Generate UI design image for a single page."""
     project = get_project(project_id)
     if not project:
@@ -407,7 +426,12 @@ async def api_generate_single_page_design(project_id: str, body: SinglePageDesig
 # ---------------------------------------------------------------------------
 
 @router.post("/{project_id}/generate-comprehensive")
-async def api_generate_comprehensive(project_id: str, current_user: dict = Depends(get_current_user)):
+@rate_limit(generation_limiter)
+async def api_generate_comprehensive(
+    project_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """Generate AI-integrated comprehensive product solution via SSE stream."""
     project = get_project(project_id)
     if not project:

@@ -14,8 +14,11 @@ from app.api.generation import router as generation_router
 from app.api.permissions import router as permissions_router
 from app.api.projects import router as projects_router
 from app.api.skills import router as skills_router
+from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.config import settings
+from app.core.error_handlers import setup_error_handlers
+from app.core.rate_limiter import RateLimitMiddleware, standard_limiter
 from app.db.database import init_db, init_admin_user
 from app.models.schemas import ModelsResponse
 from app.services.skill_service import init_default_skills
@@ -123,10 +126,18 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    max_age=600,  # 10 minutes cache for preflight requests
+)
+
+# Add rate limiting middleware
+app.add_middleware(
+    RateLimitMiddleware,
+    limiter=standard_limiter,
+    exempt_paths=["/api/health"],
 )
 
 app.include_router(auth_router)
@@ -136,6 +147,10 @@ app.include_router(permissions_router)
 app.include_router(generation_router)
 app.include_router(export_router)
 app.include_router(skills_router)
+app.include_router(tasks_router)
+
+# Setup global error handlers
+setup_error_handlers(app)
 
 
 @app.get("/api/health")
