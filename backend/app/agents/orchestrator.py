@@ -332,6 +332,87 @@ async def revise_prd(
 
 
 # ---------------------------------------------------------------------------
+# AI Auto-fill Page Content
+# ---------------------------------------------------------------------------
+
+_AI_FILL_SYSTEM_PROMPT = """你是一个专业的B端SaaS产品界面设计助手。你的任务是根据用户的描述，帮助填充产品界面页面的结构化描述信息。
+
+你需要输出的字段对应一个专业的B端SaaS界面设计Prompt模板，模板结构如下：
+
+Theme: Professional B-end SaaS web interface for [系统名称/行业], [页面类型].
+Layout & Structure:
+[导航布局], [顶部区域], [内容区域布局].
+Specific Content:
+Containing [具体组件描述].
+Style & Color:
+[风格定义], [配色].
+Quality Tags:
+[质量标签].
+
+请根据用户的描述，生成或更新以下字段的值。你的回复必须严格按照以下格式：
+1. 先用中文简短回复用户的请求（1-3句话，描述你做了什么调整）
+2. 然后紧跟一个JSON块（用```json和```包裹），包含所有字段的建议值
+
+JSON字段说明：
+- name: 页面名称（简洁的中文名称）
+- systemName: 系统名称/行业（如：CRM客户管理系统、电商后台管理平台）
+- pageType: 页面类型（如：Dashboard数据看板、列表管理页、详情页、表单页）
+- navigationLayout: 导航布局（英文描述，如：Dark left vertical sidebar navigation with collapsible menu groups）
+- topArea: 顶部区域（英文描述，如：Top header with breadcrumbs, global search bar, and user profile dropdown）
+- contentAreaLayout: 内容区域布局（英文描述，如：Main content area with 3-column layout: filters sidebar, data table, and detail panel）
+- specificContent: 具体组件描述（英文描述，如：Complex data tables with sortable columns, status badges, pagination, line charts with date range selector, KPI cards with trend indicators）
+- styleDefinition: 风格定义（英文描述，如：Clean corporate style with Ant Design system influence, consistent spacing and typography）
+- colorScheme: 配色方案（英文描述，如：White background with corporate blue (#1890ff) accents, light gray (#f5f5f5) secondary background）
+- qualityTags: 质量标签（英文，如：High fidelity, vector style, UI/UX, accurate proportions, 8k resolution）
+
+注意：
+- 导航布局、顶部区域、内容区域布局、具体组件描述、风格定义、配色方案、质量标签这些字段请用英文填写，因为这些会用于图像生成的Prompt
+- 页面名称、系统名称/行业、页面类型用中文填写
+- 请确保描述具体、专业、详细，能够生成高质量的B端SaaS界面设计图"""
+
+
+async def ai_fill_page_content_stream(
+    message: str,
+    current_fields: dict,
+    chat_model: str = None,
+) -> AsyncGenerator[str, None]:
+    """Stream AI auto-fill for page content fields."""
+    llm = get_streaming_llm(model=chat_model, temperature=0.7, max_tokens=4096)
+
+    # Build current fields description
+    fields_desc = "\n".join(
+        f"- {k}: {v}" for k, v in current_fields.items() if v
+    )
+    if not fields_desc:
+        fields_desc = "（所有字段为空，需要全新填充）"
+
+    user_prompt = f"当前页面字段信息：\n{fields_desc}\n\n用户要求：{message}"
+
+    messages = [
+        SystemMessage(content=_AI_FILL_SYSTEM_PROMPT),
+        HumanMessage(content=user_prompt),
+    ]
+
+    full_text = ""
+    async for chunk in llm.astream(messages):
+        token = chunk.content
+        if token:
+            full_text += token
+            yield json.dumps({"type": "token", "data": token}) + "\n"
+
+    # Parse JSON from the complete response
+    json_match = re.search(r"```json\s*([\s\S]*?)```", full_text)
+    if json_match:
+        try:
+            fields = json.loads(json_match.group(1).strip())
+            yield json.dumps({"type": "fields", "data": json.dumps(fields, ensure_ascii=False)}) + "\n"
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse AI fill JSON from response")
+
+    yield json.dumps({"type": "done", "data": ""}) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Full pipeline orchestrator
 # ---------------------------------------------------------------------------
 

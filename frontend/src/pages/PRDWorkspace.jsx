@@ -10,6 +10,7 @@ import {
   getDesignVersions, getDesignVersionImages,
   getComprehensiveVersions, getComprehensiveVersionContent,
   fetchProjectPermissions,
+  aiFillPageContent,
 } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import './PRDWorkspace/PRDWorkspace.css'
@@ -81,11 +82,23 @@ export default function PRDWorkspace() {
   // Page filter state (for archive/delete)
   const [pageFilter, setPageFilter] = useState('active') // 'all' | 'active' | 'archived' | 'deleted'
 
-  // Edit & config modals
+  // Unified edit settings modal (page content + image config)
   const [editingPage, setEditingPage] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', description: '', keyElements: '' })
-  const [imageConfigPage, setImageConfigPage] = useState(null)
+  const [editForm, setEditForm] = useState({
+    name: '', systemName: '', pageType: '',
+    navigationLayout: '', topArea: '', contentAreaLayout: '',
+    specificContent: '', styleDefinition: '', colorScheme: '',
+    qualityTags: 'High fidelity, vector style, UI/UX, accurate proportions, 8k resolution',
+    // Image config fields (merged)
+    resolution: '', ratio: '', referenceImage: '', extraRequirements: '',
+  })
   const [pageImageConfigs, setPageImageConfigs] = useState({})
+  // AI auto-fill chat state
+  const [aiChatMessages, setAiChatMessages] = useState([])
+  const [aiChatInput, setAiChatInput] = useState('')
+  const [aiChatLoading, setAiChatLoading] = useState(false)
+  const aiChatAbortRef = useRef(null)
+  const aiChatEndRef = useRef(null)
 
   // Add custom page modal
   const [showAddPageModal, setShowAddPageModal] = useState(false)
@@ -251,6 +264,13 @@ export default function PRDWorkspace() {
       }).catch(() => {})
     }
   }, [showComprehensiveVersions, id])
+
+  // Auto-scroll AI chat messages
+  useEffect(() => {
+    if (aiChatEndRef.current) {
+      aiChatEndRef.current.scrollTop = aiChatEndRef.current.scrollHeight
+    }
+  }, [aiChatMessages])
 
   const handleSend = useCallback(() => {
     const text = input.trim()
@@ -585,43 +605,149 @@ export default function PRDWorkspace() {
     setDesignStatus('')
   }
 
-  // Edit page content handlers
+  // Unified edit settings handlers (page content + image config)
   const handleOpenEditPage = (page, e) => {
     e.stopPropagation()
+    const pageConfig = pageImageConfigs[page.id] || {}
     setEditForm({
       name: page.name || '',
-      description: page.description || '',
-      keyElements: (page.keyElements || []).join(', '),
+      systemName: page.systemName || '',
+      pageType: page.pageType || '',
+      navigationLayout: page.navigationLayout || '',
+      topArea: page.topArea || '',
+      contentAreaLayout: page.contentAreaLayout || '',
+      specificContent: page.specificContent || (page.keyElements || []).join(', '),
+      styleDefinition: page.styleDefinition || '',
+      colorScheme: page.colorScheme || '',
+      qualityTags: page.qualityTags || 'High fidelity, vector style, UI/UX, accurate proportions, 8k resolution',
+      resolution: pageConfig.resolution || '',
+      ratio: pageConfig.ratio || '',
+      referenceImage: pageConfig.referenceImage || '',
+      extraRequirements: pageConfig.extraRequirements || '',
     })
+    setAiChatMessages([])
+    setAiChatInput('')
+    setAiChatLoading(false)
     setEditingPage(page)
+  }
+
+  // Build structured description from edit form fields
+  const buildStructuredDescription = (form) => {
+    const parts = []
+    if (form.systemName || form.pageType) {
+      parts.push(`Theme: Professional B-end SaaS web interface for ${form.systemName || '[系统]'}, ${form.pageType || '[页面类型]'}.`)
+    }
+    const layoutParts = [form.navigationLayout, form.topArea, form.contentAreaLayout].filter(Boolean)
+    if (layoutParts.length > 0) {
+      parts.push(`Layout & Structure:\n${layoutParts.join(',\n')}.`)
+    }
+    if (form.specificContent) {
+      parts.push(`Specific Content:\nContaining ${form.specificContent}.`)
+    }
+    const styleParts = [form.styleDefinition, form.colorScheme].filter(Boolean)
+    if (styleParts.length > 0) {
+      parts.push(`Style & Color:\n${styleParts.join(', ')}.`)
+    }
+    if (form.qualityTags) {
+      parts.push(`Quality Tags:\n${form.qualityTags}.`)
+    }
+    return parts.join('\n')
   }
 
   const handleSaveEditPage = () => {
     if (!editingPage) return
+    const description = buildStructuredDescription(editForm)
     const updatedPages = pagesList.map((p) => {
       if (p.id === editingPage.id) {
         return {
           ...p,
           name: editForm.name,
-          description: editForm.description,
-          keyElements: editForm.keyElements.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+          description,
+          // Store structured fields for re-editing
+          systemName: editForm.systemName,
+          pageType: editForm.pageType,
+          navigationLayout: editForm.navigationLayout,
+          topArea: editForm.topArea,
+          contentAreaLayout: editForm.contentAreaLayout,
+          specificContent: editForm.specificContent,
+          styleDefinition: editForm.styleDefinition,
+          colorScheme: editForm.colorScheme,
+          qualityTags: editForm.qualityTags,
+          keyElements: editForm.specificContent.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
         }
       }
       return p
     })
     setPagesList(updatedPages)
+    // Also save image config
+    setPageImageConfigs((prev) => ({
+      ...prev,
+      [editingPage.id]: {
+        resolution: editForm.resolution,
+        ratio: editForm.ratio,
+        referenceImage: editForm.referenceImage,
+        extraRequirements: editForm.extraRequirements,
+      },
+    }))
+    // Persist to backend
+    updateProject(id, { pages_plan: JSON.stringify({ pages: updatedPages, globalStyle }) }).catch(() => {})
     setEditingPage(null)
   }
 
-  // Image config handlers
-  const handleOpenImageConfig = (pageId, e) => {
-    e.stopPropagation()
-    setImageConfigPage(pageId)
-  }
+  // AI auto-fill handler
+  const handleAiFill = () => {
+    if (!aiChatInput.trim() || aiChatLoading) return
+    const userMsg = aiChatInput.trim()
+    setAiChatMessages((prev) => [...prev, { role: 'user', content: userMsg }])
+    setAiChatInput('')
+    setAiChatLoading(true)
 
-  const handleSaveImageConfig = (pageId, config) => {
-    setPageImageConfigs((prev) => ({ ...prev, [pageId]: config }))
-    setImageConfigPage(null)
+    let assistantText = ''
+    const currentFields = {
+      name: editForm.name, systemName: editForm.systemName, pageType: editForm.pageType,
+      navigationLayout: editForm.navigationLayout, topArea: editForm.topArea,
+      contentAreaLayout: editForm.contentAreaLayout, specificContent: editForm.specificContent,
+      styleDefinition: editForm.styleDefinition, colorScheme: editForm.colorScheme,
+      qualityTags: editForm.qualityTags,
+    }
+
+    const abort = aiFillPageContent(id, userMsg, currentFields, {
+      onToken(token) {
+        assistantText += token
+        setAiChatMessages((prev) => {
+          const msgs = [...prev]
+          const lastMsg = msgs[msgs.length - 1]
+          if (lastMsg && lastMsg.role === 'assistant') {
+            msgs[msgs.length - 1] = { ...lastMsg, content: assistantText }
+          } else {
+            msgs.push({ role: 'assistant', content: assistantText })
+          }
+          return msgs
+        })
+      },
+      onFields(fields) {
+        // Auto-populate form fields from LLM response
+        setEditForm((prev) => {
+          const updated = { ...prev }
+          const fieldMap = ['name', 'systemName', 'pageType', 'navigationLayout', 'topArea',
+            'contentAreaLayout', 'specificContent', 'styleDefinition', 'colorScheme', 'qualityTags']
+          fieldMap.forEach((key) => {
+            if (fields[key] !== undefined && fields[key] !== '') {
+              updated[key] = fields[key]
+            }
+          })
+          return updated
+        })
+      },
+      onDone() {
+        setAiChatLoading(false)
+      },
+      onError(msg) {
+        setAiChatLoading(false)
+        setAiChatMessages((prev) => [...prev, { role: 'error', content: msg || 'AI 填充失败' }])
+      },
+    })
+    aiChatAbortRef.current = abort
   }
 
   // Save global style handler
@@ -1452,8 +1578,7 @@ export default function PRDWorkspace() {
                             <button className="btn-page-action btn-restore-page" onClick={(e) => handleRestorePage(page.id, e)}>恢复</button>
                           ) : (
                             <>
-                              <button className="btn-page-action btn-edit-content" onClick={(e) => handleOpenEditPage(page, e)}>编辑</button>
-                              <button className="btn-page-action btn-image-config" onClick={(e) => handleOpenImageConfig(page.id, e)}>配置</button>
+                              <button className="btn-page-action btn-edit-content" onClick={(e) => handleOpenEditPage(page, e)}>设置</button>
                               <button
                                 className={`btn-page-action btn-generate-inline ${isGenerating ? 'btn-generating' : ''}`}
                                 onClick={(e) => { e.stopPropagation(); if (!isGenerating && !designGenerating) handleGeneratePageDesign(page.id) }}
@@ -1600,111 +1725,188 @@ export default function PRDWorkspace() {
             </div>
           )}
 
-          {/* Edit Content Modal */}
+          {/* Unified Edit Settings Modal (Page Content + Image Config + AI Auto-fill) */}
           {editingPage && (
-            <div className="modal-overlay" onClick={() => setEditingPage(null)}>
-              <div className="modal modal-extra-wide" onClick={(e) => e.stopPropagation()}>
-                <h2>编辑页面内容</h2>
-                <div className="modal-form">
-                  <label className="form-label">
-                    页面名称
-                    <input type="text" className="form-input" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
-                  </label>
-                  <label className="form-label">
-                    页面描述
-                    <textarea className="form-textarea" rows={4} value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))} />
-                  </label>
-                  <label className="form-label">
-                    关键元素（逗号分隔）
-                    <input type="text" className="form-input" value={editForm.keyElements} onChange={(e) => setEditForm((f) => ({ ...f, keyElements: e.target.value }))} placeholder="如：导航栏, 搜索框, 商品列表" />
-                  </label>
+            <div className="modal-overlay" onClick={() => { aiChatAbortRef.current?.(); setEditingPage(null) }}>
+              <div className="modal modal-unified-settings" onClick={(e) => e.stopPropagation()}>
+                <div className="unified-modal-header">
+                  <h2>编辑页面设置</h2>
+                  <span className="unified-modal-page-name">{editForm.name}</span>
+                  <button className="btn-close-small" onClick={() => { aiChatAbortRef.current?.(); setEditingPage(null) }}>&times;</button>
                 </div>
-                <div className="modal-actions">
-                  <button className="btn-secondary" onClick={() => setEditingPage(null)}>取消</button>
-                  <button className="btn-primary" onClick={handleSaveEditPage}>保存</button>
-                </div>
-              </div>
-            </div>
-          )}
+                <div className="unified-modal-body">
+                  {/* Left: Form fields */}
+                  <div className="unified-modal-form-side">
+                    <div className="modal-form">
+                      {/* Page name */}
+                      <label className="form-label">
+                        页面名称
+                        <input type="text" className="form-input" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
+                      </label>
 
-          {/* Image Config Modal */}
-          {imageConfigPage && (
-            <div className="modal-overlay" onClick={() => setImageConfigPage(null)}>
-              <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <h2>图片生成配置</h2>
-                <div className="modal-form">
-                  <label className="form-label">
-                    图片分辨率
-                    <select className="form-select" value={pageImageConfigs[imageConfigPage]?.resolution || ''} onChange={(e) => {
-                      const val = e.target.value
-                      setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], resolution: val } }))
-                    }}>
-                      <option value="">{project?.default_image_resolution ? `项目默认 (${project.default_image_resolution})` : '默认'}</option>
-                      {RESOLUTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="form-label">
-                    图片比例
-                    <select className="form-select" value={pageImageConfigs[imageConfigPage]?.ratio || ''} onChange={(e) => {
-                      const val = e.target.value
-                      setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], ratio: val } }))
-                    }}>
-                      <option value="">{project?.default_image_ratio ? `项目默认 (${project.default_image_ratio})` : '默认'}</option>
-                      {RATIO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="form-label">
-                    参考图片
-                    <span className="form-hint">上传参考图片，生成设计图时将引用其风格和布局</span>
-                    {pageImageConfigs[imageConfigPage]?.referenceImage ? (
-                      <div className="reference-image-preview">
-                        <img src={pageImageConfigs[imageConfigPage].referenceImage} alt="参考图片" />
-                        <button className="btn-remove-ref-image" onClick={() => {
-                          setPageImageConfigs((prev) => {
-                            const updated = { ...prev[imageConfigPage] }
-                            delete updated.referenceImage
-                            return { ...prev, [imageConfigPage]: updated }
-                          })
-                        }}>&times; 移除</button>
+                      {/* Section: Theme */}
+                      <div className="form-section-title">Theme 主题</div>
+                      <div className="form-row-2col">
+                        <label className="form-label">
+                          系统名称/行业
+                          <input type="text" className="form-input" value={editForm.systemName} onChange={(e) => setEditForm((f) => ({ ...f, systemName: e.target.value }))} placeholder="如：CRM客户管理系统" />
+                        </label>
+                        <label className="form-label">
+                          页面类型
+                          <input type="text" className="form-input" value={editForm.pageType} onChange={(e) => setEditForm((f) => ({ ...f, pageType: e.target.value }))} placeholder="如：Dashboard数据看板" />
+                        </label>
                       </div>
-                    ) : (
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="form-file-input"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          const reader = new FileReader()
-                          reader.onload = (ev) => {
-                            setPageImageConfigs((prev) => ({
-                              ...prev,
-                              [imageConfigPage]: { ...prev[imageConfigPage], referenceImage: ev.target.result },
-                            }))
-                          }
-                          reader.readAsDataURL(file)
-                          e.target.value = ''
-                        }}
-                      />
-                    )}
-                  </label>
-                  <label className="form-label">
-                    其他要求
-                    <textarea
-                      className="form-textarea"
-                      rows={3}
-                      placeholder="输入对图片的其他要求，如：使用深色主题、突出品牌色、增加数据图表元素..."
-                      value={pageImageConfigs[imageConfigPage]?.extraRequirements || ''}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setPageImageConfigs((prev) => ({ ...prev, [imageConfigPage]: { ...prev[imageConfigPage], extraRequirements: val } }))
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="modal-actions">
-                  <button className="btn-secondary" onClick={() => setImageConfigPage(null)}>取消</button>
-                  <button className="btn-primary" onClick={() => handleSaveImageConfig(imageConfigPage, pageImageConfigs[imageConfigPage] || {})}>确定</button>
+
+                      {/* Section: Layout & Structure */}
+                      <div className="form-section-title">Layout & Structure 布局结构</div>
+                      <label className="form-label">
+                        导航布局
+                        <input type="text" className="form-input" value={editForm.navigationLayout} onChange={(e) => setEditForm((f) => ({ ...f, navigationLayout: e.target.value }))} placeholder="e.g., Dark left vertical sidebar navigation" />
+                      </label>
+                      <label className="form-label">
+                        顶部区域
+                        <input type="text" className="form-input" value={editForm.topArea} onChange={(e) => setEditForm((f) => ({ ...f, topArea: e.target.value }))} placeholder="e.g., Top header with breadcrumbs and user profile" />
+                      </label>
+                      <label className="form-label">
+                        内容区域布局
+                        <input type="text" className="form-input" value={editForm.contentAreaLayout} onChange={(e) => setEditForm((f) => ({ ...f, contentAreaLayout: e.target.value }))} placeholder="e.g., Main content area divided into 2 columns" />
+                      </label>
+
+                      {/* Section: Specific Content */}
+                      <div className="form-section-title">Specific Content 具体内容</div>
+                      <label className="form-label">
+                        具体组件描述
+                        <textarea className="form-textarea" rows={3} value={editForm.specificContent} onChange={(e) => setEditForm((f) => ({ ...f, specificContent: e.target.value }))} placeholder="e.g., Complex data tables with status badges, line charts, search filters" />
+                      </label>
+
+                      {/* Section: Style & Color */}
+                      <div className="form-section-title">Style & Color 风格配色</div>
+                      <div className="form-row-2col">
+                        <label className="form-label">
+                          风格定义
+                          <input type="text" className="form-input" value={editForm.styleDefinition} onChange={(e) => setEditForm((f) => ({ ...f, styleDefinition: e.target.value }))} placeholder="e.g., Clean corporate style, Ant Design" />
+                        </label>
+                        <label className="form-label">
+                          配色方案
+                          <input type="text" className="form-input" value={editForm.colorScheme} onChange={(e) => setEditForm((f) => ({ ...f, colorScheme: e.target.value }))} placeholder="e.g., White background with blue accents" />
+                        </label>
+                      </div>
+
+                      {/* Section: Quality Tags */}
+                      <div className="form-section-title">Quality Tags 质量标签</div>
+                      <label className="form-label">
+                        质量标签
+                        <input type="text" className="form-input" value={editForm.qualityTags} onChange={(e) => setEditForm((f) => ({ ...f, qualityTags: e.target.value }))} />
+                      </label>
+
+                      {/* Section: Image Generation Config */}
+                      <div className="form-section-title">Image Config 图片生成配置</div>
+                      <div className="form-row-2col">
+                        <label className="form-label">
+                          图片分辨率
+                          <select className="form-select" value={editForm.resolution} onChange={(e) => setEditForm((f) => ({ ...f, resolution: e.target.value }))}>
+                            <option value="">{project?.default_image_resolution ? `项目默认 (${project.default_image_resolution})` : '默认'}</option>
+                            {RESOLUTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
+                        </label>
+                        <label className="form-label">
+                          图片比例
+                          <select className="form-select" value={editForm.ratio} onChange={(e) => setEditForm((f) => ({ ...f, ratio: e.target.value }))}>
+                            <option value="">{project?.default_image_ratio ? `项目默认 (${project.default_image_ratio})` : '默认'}</option>
+                            {RATIO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                      <label className="form-label">
+                        参考图片
+                        <span className="form-hint">上传参考图片，生成设计图时将引用其风格和布局</span>
+                        {editForm.referenceImage ? (
+                          <div className="reference-image-preview">
+                            <img src={editForm.referenceImage} alt="参考图片" />
+                            <button className="btn-remove-ref-image" onClick={() => setEditForm((f) => ({ ...f, referenceImage: '' }))}>&times; 移除</button>
+                          </div>
+                        ) : (
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="form-file-input"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              const reader = new FileReader()
+                              reader.onload = (ev) => setEditForm((f) => ({ ...f, referenceImage: ev.target.result }))
+                              reader.readAsDataURL(file)
+                              e.target.value = ''
+                            }}
+                          />
+                        )}
+                      </label>
+                      <label className="form-label">
+                        其他要求
+                        <textarea className="form-textarea" rows={2} placeholder="如：使用深色主题、突出品牌色..." value={editForm.extraRequirements} onChange={(e) => setEditForm((f) => ({ ...f, extraRequirements: e.target.value }))} />
+                      </label>
+                    </div>
+
+                    <div className="modal-actions">
+                      <button className="btn-secondary" onClick={() => { aiChatAbortRef.current?.(); setEditingPage(null) }}>取消</button>
+                      <button className="btn-primary" onClick={handleSaveEditPage}>保存</button>
+                    </div>
+                  </div>
+
+                  {/* Right: AI Auto-fill Chat */}
+                  <div className="unified-modal-ai-side">
+                    <div className="ai-chat-header">
+                      <span className="ai-chat-title">AI 助手</span>
+                      <span className="ai-chat-hint">描述页面需求，AI 自动填充表单</span>
+                    </div>
+                    <div className="ai-chat-messages" ref={aiChatEndRef}>
+                      {aiChatMessages.length === 0 && (
+                        <div className="ai-chat-welcome">
+                          <p className="ai-chat-welcome-title">描述你想要的页面</p>
+                          <p className="ai-chat-welcome-hint">AI 会自动解析并填充左侧表单字段</p>
+                          <div className="ai-chat-examples">
+                            <button className="ai-chat-example-btn" onClick={() => setAiChatInput('我需要一个CRM系统的客户列表管理页面，左侧有导航菜单，顶部有搜索和筛选，主内容区是数据表格')}>
+                              CRM客户列表页面
+                            </button>
+                            <button className="ai-chat-example-btn" onClick={() => setAiChatInput('设计一个数据分析看板，包含KPI卡片、折线图、柱状图，使用深色主题')}>
+                              数据分析看板
+                            </button>
+                            <button className="ai-chat-example-btn" onClick={() => setAiChatInput('电商后台的订单管理页面，有订单列表、状态筛选、批量操作功能')}>
+                              电商订单管理页
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {aiChatMessages.map((msg, idx) => (
+                        <div key={idx} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
+                          {msg.role === 'user' && <div className="ai-chat-msg-content ai-chat-msg-user-content">{msg.content}</div>}
+                          {msg.role === 'assistant' && <div className="ai-chat-msg-content ai-chat-msg-assistant-content">{msg.content}</div>}
+                          {msg.role === 'error' && <div className="ai-chat-msg-content ai-chat-msg-error-content">{msg.content}</div>}
+                        </div>
+                      ))}
+                      {aiChatLoading && !aiChatMessages.some((m) => m.role === 'assistant') && (
+                        <div className="ai-chat-msg ai-chat-msg-assistant">
+                          <div className="ai-chat-msg-content ai-chat-msg-assistant-content ai-chat-typing">AI 正在思考...</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="ai-chat-input-area">
+                      <div className="ai-chat-input-row">
+                        <textarea
+                          className="ai-chat-input"
+                          rows={2}
+                          placeholder="描述你想要的页面，AI 会自动填充表单..."
+                          value={aiChatInput}
+                          onChange={(e) => setAiChatInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiFill() } }}
+                          disabled={aiChatLoading}
+                        />
+                        <button className="btn-primary ai-chat-send-btn" onClick={handleAiFill} disabled={aiChatLoading || !aiChatInput.trim()}>
+                          {aiChatLoading ? '...' : '发送'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
