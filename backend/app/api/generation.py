@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 from app.agents.orchestrator import (
+    ai_fill_page_content_stream,
     consolidate_comprehensive_stream,
     run_full_pipeline_stream,
     run_revision_pipeline_stream,
@@ -503,6 +504,60 @@ async def api_generate_comprehensive(
         finally:
             if comprehensive_content:
                 save_comprehensive_version(project_id, comprehensive_content, "ai_generated")
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI Auto-fill Page Content
+# ---------------------------------------------------------------------------
+
+class AiFillPageContentRequest(BaseModel):
+    message: str = Field(..., min_length=1, description="User description for AI to fill page content fields")
+    current_fields: dict = Field(default_factory=dict, description="Current form field values")
+
+
+@router.post("/{project_id}/ai-fill-page-content")
+@rate_limit(generation_limiter)
+async def api_ai_fill_page_content(
+    project_id: str,
+    body: AiFillPageContentRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Use LLM to auto-fill page content description fields via SSE stream."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    check_project_permission(project_id, current_user, "edit")
+
+    chat_model = project.get("chat_model") or None
+
+    async def event_stream():
+        try:
+            async for event_str in ai_fill_page_content_stream(
+                message=body.message,
+                current_fields=body.current_fields,
+                chat_model=chat_model,
+            ):
+                yield f"data: {event_str}\n\n"
+        except (ValueError, OpenAIAuthError) as e:
+            logger.error("LLM auth error during AI fill: %s", e)
+            error_msg = str(e) if isinstance(e, ValueError) else (
+                "OpenRouter API 认证失败，请检查 OPENROUTER_API_KEY 是否正确配置。"
+            )
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
+        except Exception as e:
+            logger.error("Error during AI fill: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'data': f'AI 填充失败: {str(e)}'})}\n\n"
 
     return StreamingResponse(
         event_stream(),

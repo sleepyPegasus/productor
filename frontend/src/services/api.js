@@ -605,6 +605,28 @@ export function generateComprehensive(projectId, callbacks) {
 }
 
 /**
+ * AI auto-fill page content fields via SSE stream.
+ * @param {string} projectId
+ * @param {string} message - user description
+ * @param {object} currentFields - current form field values
+ * @param {object} callbacks - { onToken, onFields, onDone, onError }
+ * @returns {function} abort function
+ */
+export function aiFillPageContent(projectId, message, currentFields, callbacks) {
+  return streamSSE(
+    `${BASE}/projects/${projectId}/ai-fill-page-content`,
+    { message, current_fields: currentFields },
+    {
+      token: (data) => callbacks.onToken?.(data),
+      fields: (data) => callbacks.onFields?.(JSON.parse(data)),
+      done: () => callbacks.onDone?.(),
+      error: (data) => callbacks.onError?.(data),
+    },
+    'AI 填充请求失败',
+  );
+}
+
+/**
  * Revise PRD via SSE stream.
  * Same callback shape as generatePRD.
  */
