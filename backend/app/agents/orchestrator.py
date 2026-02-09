@@ -221,7 +221,6 @@ async def generate_page_images(
 async def generate_prd_stream(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
-    page_images: Optional[dict[str, str]] = None,
     chat_model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Stream PRD generation token by token."""
@@ -264,12 +263,11 @@ async def generate_prd_stream(
 async def generate_prd(
     structured_requirement: dict,
     pages_plan: Optional[dict] = None,
-    page_images: Optional[dict[str, str]] = None,
     chat_model: str = None,
 ) -> str:
     """Generate complete PRD (non-streaming)."""
     tokens = []
-    async for event_str in generate_prd_stream(structured_requirement, pages_plan, page_images, chat_model=chat_model):
+    async for event_str in generate_prd_stream(structured_requirement, pages_plan, chat_model=chat_model):
         event = json.loads(event_str)
         if event["type"] == "token":
             tokens.append(event["data"])
@@ -373,7 +371,7 @@ async def run_full_pipeline_stream(
     # Phase 3: PRD Generation (streamed)
     yield json.dumps({"type": "status", "data": "阶段 3/3: 正在生成 PRD 文档..."}) + "\n"
     prd_tokens = []
-    async for event_str in generate_prd_stream(structured, pages, None, chat_model=chat_model):
+    async for event_str in generate_prd_stream(structured, pages, chat_model=chat_model):
         yield event_str
         event = json.loads(event_str)
         if event["type"] == "token":
@@ -647,15 +645,7 @@ def _embed_design_images(content: str, design_images: list) -> str:
     return content
 
 
-# Known multimodal model patterns (used to decide whether to send image content parts)
-_COMPREHENSIVE_MULTIMODAL_PATTERNS = [
-    "gpt-4o", "gpt-4-turbo", "gpt-4-vision",
-    "claude-sonnet", "claude-opus", "claude-haiku",
-    "gemini-2", "gemini-3", "gemini-pro",
-    "qwen-vl", "qwen2-vl",
-    "llava", "internvl",
-    "kimi",
-]
+from app.models.constants import MULTIMODAL_PATTERNS
 
 
 def _is_model_multimodal(model_id: str) -> bool:
@@ -663,7 +653,7 @@ def _is_model_multimodal(model_id: str) -> bool:
     if not model_id:
         return False
     model_lower = model_id.lower()
-    return any(p in model_lower for p in _COMPREHENSIVE_MULTIMODAL_PATTERNS)
+    return any(p in model_lower for p in MULTIMODAL_PATTERNS)
 
 
 async def consolidate_comprehensive_stream(

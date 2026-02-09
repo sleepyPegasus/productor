@@ -15,6 +15,81 @@ function getAuthHeadersOnly() {
 }
 
 // ---------------------------------------------------------------------------
+// SSE streaming helper - shared by all SSE endpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * Generic SSE stream consumer. Sends a POST request with JSON body and
+ * dispatches parsed events to the matching callback.
+ *
+ * @param {string} url - API endpoint
+ * @param {object} body - JSON body to POST
+ * @param {object} eventHandlers - Map of event type -> handler function.
+ *   Values whose keys end with `:json` will have event.data JSON-parsed
+ *   before being passed to the handler.
+ * @param {string} errorMsg - Default error message when request fails
+ * @returns {function} abort function
+ */
+function streamSSE(url, body, eventHandlers, errorMsg = '请求失败') {
+  const controller = new AbortController();
+
+  fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: body != null ? JSON.stringify(body) : undefined,
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(errorMsg);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function read() {
+        reader
+          .read()
+          .then(({ done, value }) => {
+            if (done) {
+              eventHandlers.done?.();
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.replace(/^data:\s*/, '').trim();
+              if (!trimmed) continue;
+              try {
+                const event = JSON.parse(trimmed);
+                const handler = eventHandlers[event.type];
+                if (handler) {
+                  handler(event.data);
+                }
+              } catch {
+                // skip malformed line
+              }
+            }
+            read();
+          })
+          .catch((err) => {
+            if (err.name !== 'AbortError') {
+              eventHandlers.error?.(err.message);
+            }
+          });
+      }
+      read();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        eventHandlers.error?.(err.message);
+      }
+    });
+
+  return () => controller.abort();
+}
+
+// ---------------------------------------------------------------------------
 // Auth API
 // ---------------------------------------------------------------------------
 
@@ -387,84 +462,21 @@ export async function updateComprehensiveContent(projectId, content) {
  * @returns {function} abort function
  */
 export function generatePRD(projectId, message, callbacks) {
-  const controller = new AbortController();
-
-  fetch(`${BASE}/projects/${projectId}/generate`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ message }),
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error('生成请求失败');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      function read() {
-        reader
-          .read()
-          .then(({ done, value }) => {
-            if (done) {
-              callbacks.onDone?.();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.replace(/^data:\s*/, '').trim();
-              if (!trimmed) continue;
-              try {
-                const event = JSON.parse(trimmed);
-                switch (event.type) {
-                  case 'token':
-                    callbacks.onToken?.(event.data);
-                    break;
-                  case 'status':
-                    callbacks.onStatus?.(event.data);
-                    break;
-                  case 'requirement':
-                    callbacks.onRequirement?.(JSON.parse(event.data));
-                    break;
-                  case 'pages_plan':
-                    callbacks.onPagesPlan?.(JSON.parse(event.data));
-                    break;
-                  case 'images':
-                    callbacks.onImages?.(JSON.parse(event.data));
-                    break;
-                  case 'prd_complete':
-                    callbacks.onPrdComplete?.(event.data);
-                    break;
-                  case 'done':
-                    callbacks.onDone?.();
-                    break;
-                  case 'error':
-                    callbacks.onError?.(event.data);
-                    break;
-                }
-              } catch {
-                // skip malformed line
-              }
-            }
-            read();
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              callbacks.onError?.(err.message);
-            }
-          });
-      }
-      read();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return () => controller.abort();
+  return streamSSE(
+    `${BASE}/projects/${projectId}/generate`,
+    { message },
+    {
+      token: (data) => callbacks.onToken?.(data),
+      status: (data) => callbacks.onStatus?.(data),
+      requirement: (data) => callbacks.onRequirement?.(JSON.parse(data)),
+      pages_plan: (data) => callbacks.onPagesPlan?.(JSON.parse(data)),
+      images: (data) => callbacks.onImages?.(JSON.parse(data)),
+      prd_complete: (data) => callbacks.onPrdComplete?.(data),
+      done: () => callbacks.onDone?.(),
+      error: (data) => callbacks.onError?.(data),
+    },
+    '生成请求失败',
+  );
 }
 
 /**
@@ -526,75 +538,20 @@ export async function exportComprehensive(projectId, projectName = '产品方案
  * @returns {function} abort function
  */
 export function generateDesigns(projectId, callbacks, options = {}) {
-  const controller = new AbortController();
+  const body = {};
+  if (options.globalStyle) body.global_style = options.globalStyle;
 
-  const body = {}
-  if (options.globalStyle) body.global_style = options.globalStyle
-
-  fetch(`${BASE}/projects/${projectId}/generate-designs`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error('设计图生成请求失败');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      function read() {
-        reader
-          .read()
-          .then(({ done, value }) => {
-            if (done) {
-              callbacks.onDone?.();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.replace(/^data:\s*/, '').trim();
-              if (!trimmed) continue;
-              try {
-                const event = JSON.parse(trimmed);
-                switch (event.type) {
-                  case 'image':
-                    callbacks.onImage?.(JSON.parse(event.data));
-                    break;
-                  case 'status':
-                    callbacks.onStatus?.(event.data);
-                    break;
-                  case 'done':
-                    callbacks.onDone?.(event.data);
-                    break;
-                  case 'error':
-                    callbacks.onError?.(event.data);
-                    break;
-                }
-              } catch {
-                // skip malformed line
-              }
-            }
-            read();
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              callbacks.onError?.(err.message);
-            }
-          });
-      }
-      read();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return () => controller.abort();
+  return streamSSE(
+    `${BASE}/projects/${projectId}/generate-designs`,
+    body,
+    {
+      image: (data) => callbacks.onImage?.(JSON.parse(data)),
+      status: (data) => callbacks.onStatus?.(data),
+      done: (data) => callbacks.onDone?.(data),
+      error: (data) => callbacks.onError?.(data),
+    },
+    '设计图生成请求失败',
+  );
 }
 
 /**
@@ -606,78 +563,23 @@ export function generateDesigns(projectId, callbacks, options = {}) {
  * @returns {function} abort function
  */
 export function generateSinglePageDesign(projectId, pageId, callbacks, imageConfig = {}) {
-  const controller = new AbortController();
+  const body = { page_id: pageId };
+  if (imageConfig.resolution) body.image_resolution = imageConfig.resolution;
+  if (imageConfig.ratio) body.image_ratio = imageConfig.ratio;
+  if (imageConfig.extraRequirements) body.image_extra_requirements = imageConfig.extraRequirements;
+  if (imageConfig.referenceImage) body.reference_image = imageConfig.referenceImage;
 
-  const body = { page_id: pageId }
-  if (imageConfig.resolution) body.image_resolution = imageConfig.resolution
-  if (imageConfig.ratio) body.image_ratio = imageConfig.ratio
-  if (imageConfig.extraRequirements) body.image_extra_requirements = imageConfig.extraRequirements
-  if (imageConfig.referenceImage) body.reference_image = imageConfig.referenceImage
-
-  fetch(`${BASE}/projects/${projectId}/generate-design-page`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error('设计图生成请求失败');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      function read() {
-        reader
-          .read()
-          .then(({ done, value }) => {
-            if (done) {
-              callbacks.onDone?.();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.replace(/^data:\s*/, '').trim();
-              if (!trimmed) continue;
-              try {
-                const event = JSON.parse(trimmed);
-                switch (event.type) {
-                  case 'image':
-                    callbacks.onImage?.(JSON.parse(event.data));
-                    break;
-                  case 'status':
-                    callbacks.onStatus?.(event.data);
-                    break;
-                  case 'done':
-                    callbacks.onDone?.(event.data);
-                    break;
-                  case 'error':
-                    callbacks.onError?.(event.data);
-                    break;
-                }
-              } catch {
-                // skip malformed line
-              }
-            }
-            read();
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              callbacks.onError?.(err.message);
-            }
-          });
-      }
-      read();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return () => controller.abort();
+  return streamSSE(
+    `${BASE}/projects/${projectId}/generate-design-page`,
+    body,
+    {
+      image: (data) => callbacks.onImage?.(JSON.parse(data)),
+      status: (data) => callbacks.onStatus?.(data),
+      done: (data) => callbacks.onDone?.(data),
+      error: (data) => callbacks.onError?.(data),
+    },
+    '设计图生成请求失败',
+  );
 }
 
 /**
@@ -687,77 +589,19 @@ export function generateSinglePageDesign(projectId, pageId, callbacks, imageConf
  * @returns {function} abort function
  */
 export function generateComprehensive(projectId, callbacks) {
-  const controller = new AbortController();
-
-  fetch(`${BASE}/projects/${projectId}/generate-comprehensive`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error('综合方案生成请求失败');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      function read() {
-        reader
-          .read()
-          .then(({ done, value }) => {
-            if (done) {
-              callbacks.onDone?.();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.replace(/^data:\s*/, '').trim();
-              if (!trimmed) continue;
-              try {
-                const event = JSON.parse(trimmed);
-                switch (event.type) {
-                  case 'token':
-                    callbacks.onToken?.(event.data);
-                    break;
-                  case 'status':
-                    callbacks.onStatus?.(event.data);
-                    break;
-                  case 'comprehensive_complete':
-                    callbacks.onComprehensiveComplete?.(event.data);
-                    break;
-                  case 'comprehensive_reset':
-                    callbacks.onComprehensiveReset?.();
-                    break;
-                  case 'done':
-                    callbacks.onDone?.();
-                    break;
-                  case 'error':
-                    callbacks.onError?.(event.data);
-                    break;
-                }
-              } catch {
-                // skip malformed line
-              }
-            }
-            read();
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              callbacks.onError?.(err.message);
-            }
-          });
-      }
-      read();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return () => controller.abort();
+  return streamSSE(
+    `${BASE}/projects/${projectId}/generate-comprehensive`,
+    null,
+    {
+      token: (data) => callbacks.onToken?.(data),
+      status: (data) => callbacks.onStatus?.(data),
+      comprehensive_complete: (data) => callbacks.onComprehensiveComplete?.(data),
+      comprehensive_reset: () => callbacks.onComprehensiveReset?.(),
+      done: () => callbacks.onDone?.(),
+      error: (data) => callbacks.onError?.(data),
+    },
+    '综合方案生成请求失败',
+  );
 }
 
 /**
@@ -765,77 +609,20 @@ export function generateComprehensive(projectId, callbacks) {
  * Same callback shape as generatePRD.
  */
 export function revisePRD(projectId, message, callbacks, version = null, section = null) {
-  const controller = new AbortController();
+  const body = { message };
+  if (version !== null) body.version = version;
+  if (section !== null) body.section = section;
 
-  const body = { message }
-  if (version !== null) body.version = version
-  if (section !== null) body.section = section
-
-  fetch(`${BASE}/projects/${projectId}/revise`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error('修改请求失败');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      function read() {
-        reader
-          .read()
-          .then(({ done, value }) => {
-            if (done) {
-              callbacks.onDone?.();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.replace(/^data:\s*/, '').trim();
-              if (!trimmed) continue;
-              try {
-                const event = JSON.parse(trimmed);
-                switch (event.type) {
-                  case 'token':
-                    callbacks.onToken?.(event.data);
-                    break;
-                  case 'status':
-                    callbacks.onStatus?.(event.data);
-                    break;
-                  case 'prd_complete':
-                    callbacks.onPrdComplete?.(event.data);
-                    break;
-                  case 'done':
-                    callbacks.onDone?.();
-                    break;
-                  case 'error':
-                    callbacks.onError?.(event.data);
-                    break;
-                }
-              } catch {
-                // skip malformed line
-              }
-            }
-            read();
-          })
-          .catch((err) => {
-            if (err.name !== 'AbortError') {
-              callbacks.onError?.(err.message);
-            }
-          });
-      }
-      read();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return () => controller.abort();
+  return streamSSE(
+    `${BASE}/projects/${projectId}/revise`,
+    body,
+    {
+      token: (data) => callbacks.onToken?.(data),
+      status: (data) => callbacks.onStatus?.(data),
+      prd_complete: (data) => callbacks.onPrdComplete?.(data),
+      done: () => callbacks.onDone?.(),
+      error: (data) => callbacks.onError?.(data),
+    },
+    '修改请求失败',
+  );
 }

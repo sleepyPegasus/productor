@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -18,8 +19,9 @@ from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.config import settings
 from app.core.error_handlers import setup_error_handlers
-from app.core.rate_limiter import RateLimitMiddleware, standard_limiter
+from app.core.rate_limiter import RateLimitMiddleware, standard_limiter, generation_limiter
 from app.db.database import init_db, init_admin_user
+from app.models.constants import MULTIMODAL_PATTERNS
 from app.models.schemas import ModelsResponse
 from app.services.skill_service import init_default_skills
 
@@ -28,16 +30,6 @@ logger = logging.getLogger(__name__)
 # Cache for OpenRouter models
 _models_cache: dict = {"chat_models": [], "image_models": [], "multimodal_models": [], "timestamp": 0}
 _CACHE_TTL = 300  # 5 minutes
-
-# Known multimodal model patterns (support image input for text output)
-_MULTIMODAL_PATTERNS = [
-    "gpt-4o", "gpt-4-turbo", "gpt-4-vision",
-    "claude-sonnet", "claude-opus", "claude-haiku",
-    "gemini-2", "gemini-3", "gemini-pro",
-    "qwen-vl", "qwen2-vl",
-    "llava", "internvl",
-    "kimi",
-]
 
 
 def _is_multimodal(model_id: str, model_info: dict) -> bool:
@@ -48,7 +40,7 @@ def _is_multimodal(model_id: str, model_info: dict) -> bool:
         return True
     # Fallback: check known patterns
     model_lower = model_id.lower()
-    return any(pattern in model_lower for pattern in _MULTIMODAL_PATTERNS)
+    return any(pattern in model_lower for pattern in MULTIMODAL_PATTERNS)
 
 
 async def _fetch_openrouter_models() -> dict:
@@ -114,7 +106,19 @@ async def lifespan(app: FastAPI):
     init_db()
     init_admin_user()
     init_default_skills()
-    yield
+
+    # Periodic cleanup of rate limiter entries to prevent memory leak
+    async def _cleanup_rate_limiters():
+        while True:
+            await asyncio.sleep(600)  # every 10 minutes
+            standard_limiter.cleanup_old_entries()
+            generation_limiter.cleanup_old_entries()
+
+    cleanup_task = asyncio.create_task(_cleanup_rate_limiters())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
 
 
 app = FastAPI(

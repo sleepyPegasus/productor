@@ -150,6 +150,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Allowed column names for dynamic UPDATE statements to prevent SQL injection.
+_ALLOWED_USER_COLUMNS = frozenset({
+    "username", "email", "password_hash", "is_admin", "is_active", "updated_at",
+})
+_ALLOWED_PROJECT_COLUMNS = frozenset({
+    "name", "description", "status", "version", "category", "owner_id",
+    "chat_model", "image_model", "comprehensive_model",
+    "default_image_resolution", "default_image_ratio",
+    "raw_requirement", "structured_requirement", "pages_plan",
+    "prd_content", "design_images", "history", "chat_history",
+    "prd_versions", "design_versions",
+    "comprehensive_content", "comprehensive_versions",
+    "updated_at",
+})
+_ALLOWED_SKILL_COLUMNS = frozenset({
+    "display_name", "description", "category",
+    "system_prompt", "user_prompt_template", "output_format", "model_type",
+    "parameters", "input_variables", "extra_data",
+    "is_builtin", "is_enabled", "version", "updated_at",
+})
+
+
+def _validate_columns(kwargs: dict, allowed: frozenset, entity: str) -> None:
+    """Raise ValueError if any key in kwargs is not in the allowed set."""
+    bad = set(kwargs.keys()) - allowed
+    if bad:
+        raise ValueError(f"Invalid column(s) for {entity}: {bad}")
+
+
 # ---------------------------------------------------------------------------
 # User CRUD
 # ---------------------------------------------------------------------------
@@ -159,42 +188,52 @@ def create_user(username: str, email: str, password: str, is_admin: bool = False
     now = _now()
     password_hash = bcrypt.hash(password)
     conn = get_connection()
-    conn.execute(
-        """INSERT INTO users (id, username, email, password_hash, is_admin, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
-        (user_id, username, email, password_hash, 1 if is_admin else 0, now, now),
-    )
-    conn.commit()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    conn.close()
-    return _user_dict(row)
+    try:
+        conn.execute(
+            """INSERT INTO users (id, username, email, password_hash, is_admin, is_active, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+            (user_id, username, email, password_hash, 1 if is_admin else 0, now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _user_dict(row)
+    finally:
+        conn.close()
 
 
 def get_user_by_id(user_id: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    conn.close()
-    return _user_dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _user_dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def get_user_by_username(username: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    conn.close()
-    return _user_dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return _user_dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def get_user_by_email(email: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    conn.close()
-    return _user_dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return _user_dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def verify_user_password(username: str, password: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    conn.close()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    finally:
+        conn.close()
     if not row:
         return None
     if not bcrypt.verify(password, row["password_hash"]):
@@ -205,40 +244,49 @@ def verify_user_password(username: str, password: str) -> Optional[dict]:
 def update_user_password(user_id: str, new_password: str) -> bool:
     password_hash = bcrypt.hash(new_password)
     conn = get_connection()
-    cursor = conn.execute(
-        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-        (password_hash, _now(), user_id),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute(
+            "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+            (password_hash, _now(), user_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def list_users() -> list[dict]:
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
-    conn.close()
-    return [_user_dict(r) for r in rows]
+    try:
+        rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+        return [_user_dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def update_user(user_id: str, **kwargs) -> Optional[dict]:
     kwargs["updated_at"] = _now()
+    _validate_columns(kwargs, _ALLOWED_USER_COLUMNS, "users")
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [user_id]
     conn = get_connection()
-    conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
-    conn.commit()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    conn.close()
-    return _user_dict(row) if row else None
+    try:
+        conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _user_dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def delete_user(user_id: str) -> bool:
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM users WHERE id = ? AND is_admin = 0", (user_id,))
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute("DELETE FROM users WHERE id = ? AND is_admin = 0", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def _user_dict(row) -> dict:
@@ -259,35 +307,39 @@ def create_verification_code(email: str, purpose: str = "register") -> str:
     now = _now()
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
     conn = get_connection()
-    # Invalidate any existing unused codes for this email/purpose
-    conn.execute(
-        "UPDATE verification_codes SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
-        (email, purpose),
-    )
-    conn.execute(
-        """INSERT INTO verification_codes (id, email, code, purpose, expires_at, used, created_at)
-           VALUES (?, ?, ?, ?, ?, 0, ?)""",
-        (code_id, email, code, purpose, expires_at, now),
-    )
-    conn.commit()
-    conn.close()
-    return code
+    try:
+        # Invalidate any existing unused codes for this email/purpose
+        conn.execute(
+            "UPDATE verification_codes SET used = 1 WHERE email = ? AND purpose = ? AND used = 0",
+            (email, purpose),
+        )
+        conn.execute(
+            """INSERT INTO verification_codes (id, email, code, purpose, expires_at, used, created_at)
+               VALUES (?, ?, ?, ?, ?, 0, ?)""",
+            (code_id, email, code, purpose, expires_at, now),
+        )
+        conn.commit()
+        return code
+    finally:
+        conn.close()
 
 
 def verify_code(email: str, code: str, purpose: str = "register") -> bool:
     conn = get_connection()
-    now = datetime.now(timezone.utc).isoformat()
-    row = conn.execute(
-        """SELECT id FROM verification_codes
-           WHERE email = ? AND code = ? AND purpose = ? AND used = 0 AND expires_at > ?
-           ORDER BY created_at DESC LIMIT 1""",
-        (email, code, purpose, now),
-    ).fetchone()
-    if row:
-        conn.execute("UPDATE verification_codes SET used = 1 WHERE id = ?", (row["id"],))
-        conn.commit()
-    conn.close()
-    return row is not None
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        row = conn.execute(
+            """SELECT id FROM verification_codes
+               WHERE email = ? AND code = ? AND purpose = ? AND used = 0 AND expires_at > ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (email, code, purpose, now),
+        ).fetchone()
+        if row:
+            conn.execute("UPDATE verification_codes SET used = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+        return row is not None
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -298,54 +350,60 @@ def set_project_permission(project_id: str, user_id: str, permission: str, grant
     perm_id = uuid.uuid4().hex[:8]
     now = _now()
     conn = get_connection()
-    # Upsert permission
-    existing = conn.execute(
-        "SELECT id FROM project_permissions WHERE project_id = ? AND user_id = ?",
-        (project_id, user_id),
-    ).fetchone()
-    if existing:
-        conn.execute(
-            "UPDATE project_permissions SET permission = ?, granted_by = ?, updated_at = ? WHERE id = ?",
-            (permission, granted_by, now, existing["id"]),
-        )
-    else:
-        conn.execute(
-            """INSERT INTO project_permissions (id, project_id, user_id, permission, granted_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (perm_id, project_id, user_id, permission, granted_by, now, now),
-        )
-    conn.commit()
-    row = conn.execute(
-        "SELECT * FROM project_permissions WHERE project_id = ? AND user_id = ?",
-        (project_id, user_id),
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else {}
+    try:
+        # Upsert permission
+        existing = conn.execute(
+            "SELECT id FROM project_permissions WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE project_permissions SET permission = ?, granted_by = ?, updated_at = ? WHERE id = ?",
+                (permission, granted_by, now, existing["id"]),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO project_permissions (id, project_id, user_id, permission, granted_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (perm_id, project_id, user_id, permission, granted_by, now, now),
+            )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM project_permissions WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
 
 
 def remove_project_permission(project_id: str, user_id: str) -> bool:
     conn = get_connection()
-    cursor = conn.execute(
-        "DELETE FROM project_permissions WHERE project_id = ? AND user_id = ?",
-        (project_id, user_id),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute(
+            "DELETE FROM project_permissions WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def get_project_permissions(project_id: str) -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(
-        """SELECT pp.*, u.username, u.email
-           FROM project_permissions pp
-           JOIN users u ON pp.user_id = u.id
-           WHERE pp.project_id = ?
-           ORDER BY pp.created_at""",
-        (project_id,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        rows = conn.execute(
+            """SELECT pp.*, u.username, u.email
+               FROM project_permissions pp
+               JOIN users u ON pp.user_id = u.id
+               WHERE pp.project_id = ?
+               ORDER BY pp.created_at""",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_user_permission_for_project(project_id: str, user_id: str) -> Optional[str]:
@@ -356,41 +414,45 @@ def get_user_permission_for_project(project_id: str, user_id: str) -> Optional[s
     if project.get("owner_id") == user_id:
         return "owner"
     conn = get_connection()
-    row = conn.execute(
-        "SELECT permission FROM project_permissions WHERE project_id = ? AND user_id = ?",
-        (project_id, user_id),
-    ).fetchone()
-    conn.close()
-    return row["permission"] if row else None
+    try:
+        row = conn.execute(
+            "SELECT permission FROM project_permissions WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+        return row["permission"] if row else None
+    finally:
+        conn.close()
 
 
 def list_projects_for_user(user_id: str, category: str = "active", search: str = "") -> list[dict]:
     """List projects owned by or shared with a user."""
     conn = get_connection()
-    conditions = ["COALESCE(p.category, 'active') = ?"]
-    params = [category]
+    try:
+        conditions = ["COALESCE(p.category, 'active') = ?"]
+        params = [category]
 
-    if search:
-        conditions.append("(p.name LIKE ? OR p.description LIKE ?)")
-        like_val = f"%{search}%"
-        params.extend([like_val, like_val])
+        if search:
+            conditions.append("(p.name LIKE ? OR p.description LIKE ?)")
+            like_val = f"%{search}%"
+            params.extend([like_val, like_val])
 
-    where = "WHERE " + " AND ".join(conditions)
+        where = "WHERE " + " AND ".join(conditions)
 
-    query = f"""
-        SELECT DISTINCT p.id, p.name, p.description, p.status, p.version, p.category,
-               p.chat_model, p.image_model, p.comprehensive_model,
-               p.default_image_resolution, p.default_image_ratio,
-               p.prd_content, p.design_images, p.owner_id, p.created_at, p.updated_at
-        FROM projects p
-        LEFT JOIN project_permissions pp ON p.id = pp.project_id
-        {where} AND (p.owner_id = ? OR pp.user_id = ?)
-        ORDER BY p.updated_at DESC
-    """
-    params.extend([user_id, user_id])
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+        query = f"""
+            SELECT DISTINCT p.id, p.name, p.description, p.status, p.version, p.category,
+                   p.chat_model, p.image_model, p.comprehensive_model,
+                   p.default_image_resolution, p.default_image_ratio,
+                   p.prd_content, p.design_images, p.owner_id, p.created_at, p.updated_at
+            FROM projects p
+            LEFT JOIN project_permissions pp ON p.id = pp.project_id
+            {where} AND (p.owner_id = ? OR pp.user_id = ?)
+            ORDER BY p.updated_at DESC
+        """
+        params.extend([user_id, user_id])
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -410,21 +472,23 @@ def create_project(
     project_id = uuid.uuid4().hex[:8]
     now = _now()
     conn = get_connection()
-    conn.execute(
-        """INSERT INTO projects (id, name, description, status, version,
-           chat_model, image_model, comprehensive_model,
-           default_image_resolution, default_image_ratio, category, owner_id,
-           raw_requirement, structured_requirement, pages_plan, prd_content,
-           design_images, history, chat_history, prd_versions, design_versions,
-           created_at, updated_at)
-           VALUES (?, ?, ?, 'created', 0, ?, ?, ?, ?, ?, 'active', ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
-        (project_id, name, description, chat_model, image_model, comprehensive_model,
-         default_image_resolution, default_image_ratio, owner_id, now, now),
-    )
-    conn.commit()
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-    conn.close()
-    return dict(row)
+    try:
+        conn.execute(
+            """INSERT INTO projects (id, name, description, status, version,
+               chat_model, image_model, comprehensive_model,
+               default_image_resolution, default_image_ratio, category, owner_id,
+               raw_requirement, structured_requirement, pages_plan, prd_content,
+               design_images, history, chat_history, prd_versions, design_versions,
+               created_at, updated_at)
+               VALUES (?, ?, ?, 'created', 0, ?, ?, ?, ?, ?, 'active', ?, '', '', '', '', '[]', '[]', '[]', '[]', '[]', ?, ?)""",
+            (project_id, name, description, chat_model, image_model, comprehensive_model,
+             default_image_resolution, default_image_ratio, owner_id, now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
 
 
 def list_projects(
@@ -432,93 +496,108 @@ def list_projects(
     search: str = "",
 ) -> list[dict]:
     conn = get_connection()
-    conditions = []
-    params = []
+    try:
+        conditions = []
+        params = []
 
-    if category:
-        conditions.append("COALESCE(category, 'active') = ?")
-        params.append(category)
+        if category:
+            conditions.append("COALESCE(category, 'active') = ?")
+            params.append(category)
 
-    if search:
-        conditions.append("(name LIKE ? OR description LIKE ?)")
-        like_val = f"%{search}%"
-        params.extend([like_val, like_val])
+        if search:
+            conditions.append("(name LIKE ? OR description LIKE ?)")
+            like_val = f"%{search}%"
+            params.extend([like_val, like_val])
 
-    where = ""
-    if conditions:
-        where = "WHERE " + " AND ".join(conditions)
+        where = ""
+        if conditions:
+            where = "WHERE " + " AND ".join(conditions)
 
-    query = (
-        "SELECT id, name, description, status, version, category, "
-        "chat_model, image_model, comprehensive_model, "
-        "default_image_resolution, default_image_ratio, "
-        "prd_content, design_images, created_at, updated_at "
-        f"FROM projects {where} ORDER BY updated_at DESC"
-    )
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+        query = (
+            "SELECT id, name, description, status, version, category, "
+            "chat_model, image_model, comprehensive_model, "
+            "default_image_resolution, default_image_ratio, "
+            "prd_content, design_images, created_at, updated_at "
+            f"FROM projects {where} ORDER BY updated_at DESC"
+        )
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_project(project_id: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def update_project(project_id: str, **kwargs) -> Optional[dict]:
     kwargs["updated_at"] = _now()
+    _validate_columns(kwargs, _ALLOWED_PROJECT_COLUMNS, "projects")
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [project_id]
     conn = get_connection()
-    conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", values)
-    conn.commit()
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def delete_project(project_id: str) -> bool:
     """Soft delete: set category to 'deleted'."""
     conn = get_connection()
-    cursor = conn.execute(
-        "UPDATE projects SET category = 'deleted', updated_at = ? WHERE id = ?",
-        (_now(), project_id),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute(
+            "UPDATE projects SET category = 'deleted', updated_at = ? WHERE id = ?",
+            (_now(), project_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def archive_project(project_id: str) -> bool:
     conn = get_connection()
-    cursor = conn.execute(
-        "UPDATE projects SET category = 'archived', updated_at = ? WHERE id = ?",
-        (_now(), project_id),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute(
+            "UPDATE projects SET category = 'archived', updated_at = ? WHERE id = ?",
+            (_now(), project_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def restore_project(project_id: str) -> bool:
     conn = get_connection()
-    cursor = conn.execute(
-        "UPDATE projects SET category = 'active', updated_at = ? WHERE id = ?",
-        (_now(), project_id),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute(
+            "UPDATE projects SET category = 'active', updated_at = ? WHERE id = ?",
+            (_now(), project_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def permanently_delete_project(project_id: str) -> bool:
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        cursor = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def append_chat_message(project_id: str, role: str, content: str):
@@ -722,88 +801,103 @@ def create_skill(
     skill_id = uuid.uuid4().hex[:8]
     now = _now()
     conn = get_connection()
-    conn.execute(
-        """INSERT INTO skills (id, name, display_name, description, category,
-           system_prompt, user_prompt_template, output_format, model_type,
-           parameters, input_variables, extra_data,
-           is_builtin, is_enabled, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
-        (skill_id, name, display_name, description, category,
-         system_prompt, user_prompt_template, output_format, model_type,
-         json.dumps(parameters or {}, ensure_ascii=False),
-         json.dumps(input_variables or [], ensure_ascii=False),
-         json.dumps(extra_data or {}, ensure_ascii=False),
-         1 if is_builtin else 0,
-         1 if is_enabled else 0,
-         now, now),
-    )
-    conn.commit()
-    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
-    conn.close()
-    return dict(row)
+    try:
+        conn.execute(
+            """INSERT INTO skills (id, name, display_name, description, category,
+               system_prompt, user_prompt_template, output_format, model_type,
+               parameters, input_variables, extra_data,
+               is_builtin, is_enabled, version, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (skill_id, name, display_name, description, category,
+             system_prompt, user_prompt_template, output_format, model_type,
+             json.dumps(parameters or {}, ensure_ascii=False),
+             json.dumps(input_variables or [], ensure_ascii=False),
+             json.dumps(extra_data or {}, ensure_ascii=False),
+             1 if is_builtin else 0,
+             1 if is_enabled else 0,
+             now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
 
 
 def list_skills(category: str = None, is_enabled: bool = None) -> list[dict]:
     conn = get_connection()
-    conditions = []
-    params = []
-    if category:
-        conditions.append("category = ?")
-        params.append(category)
-    if is_enabled is not None:
-        conditions.append("is_enabled = ?")
-        params.append(1 if is_enabled else 0)
-    where = ""
-    if conditions:
-        where = "WHERE " + " AND ".join(conditions)
-    rows = conn.execute(
-        f"SELECT * FROM skills {where} ORDER BY is_builtin DESC, updated_at DESC",
-        params,
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        conditions = []
+        params = []
+        if category:
+            conditions.append("category = ?")
+            params.append(category)
+        if is_enabled is not None:
+            conditions.append("is_enabled = ?")
+            params.append(1 if is_enabled else 0)
+        where = ""
+        if conditions:
+            where = "WHERE " + " AND ".join(conditions)
+        rows = conn.execute(
+            f"SELECT * FROM skills {where} ORDER BY is_builtin DESC, updated_at DESC",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_skill(skill_id: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def get_skill_by_name(name: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM skills WHERE name = ? AND is_enabled = 1", (name,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        row = conn.execute("SELECT * FROM skills WHERE name = ? AND is_enabled = 1", (name,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def update_skill(skill_id: str, **kwargs) -> Optional[dict]:
     kwargs["updated_at"] = _now()
+    _validate_columns(kwargs, _ALLOWED_SKILL_COLUMNS, "skills")
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [skill_id]
     conn = get_connection()
-    conn.execute(f"UPDATE skills SET {set_clause} WHERE id = ?", values)
-    conn.commit()
-    row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        conn.execute(f"UPDATE skills SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def delete_skill(skill_id: str) -> bool:
     conn = get_connection()
-    # Only allow deleting non-builtin skills
-    cursor = conn.execute(
-        "DELETE FROM skills WHERE id = ? AND is_builtin = 0",
-        (skill_id,),
-    )
-    conn.commit()
-    conn.close()
-    return cursor.rowcount > 0
+    try:
+        # Only allow deleting non-builtin skills
+        cursor = conn.execute(
+            "DELETE FROM skills WHERE id = ? AND is_builtin = 0",
+            (skill_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
 
 
 def skill_exists(name: str) -> bool:
     conn = get_connection()
-    row = conn.execute("SELECT 1 FROM skills WHERE name = ?", (name,)).fetchone()
-    conn.close()
-    return row is not None
+    try:
+        row = conn.execute("SELECT 1 FROM skills WHERE name = ?", (name,)).fetchone()
+        return row is not None
+    finally:
+        conn.close()
