@@ -68,7 +68,7 @@ async def send_verification_code(body: SendVerificationRequest):
         # Dev mode: log the code
         logger.warning("=== DEV MODE: Verification code for %s is: %s ===", body.email, code)
 
-    return {"detail": "验证码已发送", "dev_code": code if not settings.SMTP_HOST else None}
+    return {"detail": "验证码已发送", "dev_code": code if not settings.IS_PRODUCTION and not settings.SMTP_HOST else None}
 
 
 @router.post("/register", response_model=TokenResponse)

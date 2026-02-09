@@ -49,8 +49,8 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><ProjectList /></ProtectedRoute>} />
       <Route path="/project/:id" element={<ProtectedRoute><PRDWorkspace /></ProtectedRoute>} />
-      <Route path="/skills" element={<ProtectedRoute><SkillManagement /></ProtectedRoute>} />
-      <Route path="/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+      <Route path="/skills" element={<ProtectedRoute adminOnly><SkillManagement /></ProtectedRoute>} />
+      <Route path="/users" element={<ProtectedRoute adminOnly><UserManagement /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
