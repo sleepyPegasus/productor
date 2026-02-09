@@ -36,6 +36,7 @@ export const useDesignStore = create((set, get) => ({
 
   // Global UI style settings
   showGlobalStyleModal: false,
+  selectedPresetId: null,
   globalStyle: { designStyle: '', colorScheme: '', layoutRequirements: '', fontStyle: '', customNotes: '' },
 
   // Resizable split panel
@@ -61,6 +62,7 @@ export const useDesignStore = create((set, get) => ({
   setShowAddPageModal: (show) => set({ showAddPageModal: show }),
   setAddPageForm: (form) => set({ addPageForm: form }),
   setShowGlobalStyleModal: (show) => set({ showGlobalStyleModal: show }),
+  setSelectedPresetId: (id) => set({ selectedPresetId: id }),
   setGlobalStyle: (style) => set({ globalStyle: style }),
   setSplitWidth: (width) => set({ splitWidth: width }),
 
@@ -143,6 +145,7 @@ export const useDesignStore = create((set, get) => ({
       showAddPageModal: false,
       addPageForm: { name: '', description: '', keyElements: '', layoutDescription: '' },
       showGlobalStyleModal: false,
+      selectedPresetId: null,
       globalStyle: { designStyle: '', colorScheme: '', layoutRequirements: '', fontStyle: '', customNotes: '' },
       splitWidth: 360,
     }),

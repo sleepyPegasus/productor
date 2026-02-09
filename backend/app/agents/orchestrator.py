@@ -160,28 +160,55 @@ def _build_image_prompt(
     image_ratio: str = "",
     image_extra_requirements: str = "",
 ) -> str:
-    """Build an image generation prompt from a page plan entry."""
+    """Build an image generation prompt from a page plan entry.
+
+    Uses English-primary prompt structure for better image model comprehension,
+    with explicit instructions for crisp Chinese text rendering.
+    """
     name = page.get("name", "页面")
     desc = page.get("description", "")
     elements = ", ".join(page.get("keyElements", []))
     layout = page.get("layoutDescription", "")
 
-    prompt = (
-        f"专业的产品UI界面设计图，{product_name} - {name}页面。"
-        f"页面描述：{desc}。"
-    )
+    parts = [
+        "Professional high-fidelity UI design mockup of a B2B SaaS enterprise management system.",
+    ]
+    if product_name:
+        parts.append(f"Product: {product_name}.")
+    parts.append(f"Page: {name}.")
+    if desc:
+        parts.append(f"Page description: {desc}.")
     if layout:
-        prompt += f"布局：{layout}。"
+        parts.append(f"Layout structure: {layout}.")
     if elements:
-        prompt += f"包含以下UI元素：{elements}。"
+        parts.append(f"Key UI components: {elements}.")
     if image_resolution:
-        prompt += f"目标分辨率：{image_resolution}。"
+        parts.append(f"Target resolution: {image_resolution}.")
     if image_ratio:
-        prompt += f"画面比例：{image_ratio}。"
+        parts.append(f"Aspect ratio: {image_ratio}.")
     if image_extra_requirements:
-        prompt += f"其他要求：{image_extra_requirements}。"
-    prompt += "现代简洁风格，高保真原型图，白色背景，清晰的UI组件和排版。"
-    return prompt
+        parts.append(f"Style requirements: {image_extra_requirements}.")
+
+    # Chinese text rendering quality instructions
+    parts.append(
+        "CRITICAL: All visible text labels, menu items, button text, titles, "
+        "and UI copy in the interface MUST be in Simplified Chinese (简体中文). "
+        "Chinese characters must be rendered with crystal-clear, sharp, and highly "
+        "legible typography using clean sans-serif fonts (PingFang SC, Microsoft YaHei, "
+        "or Noto Sans SC style). Chinese text must NOT be blurry, distorted, or "
+        "garbled — every character must be a real, meaningful Chinese word that "
+        "matches the UI context."
+    )
+
+    # Quality tags
+    parts.append(
+        "High fidelity pixel-perfect mockup, clean professional layout, "
+        "consistent spacing and alignment, modern corporate design aesthetic, "
+        "accurate UI component proportions, sharp text rendering, "
+        "4K resolution quality, white or light background."
+    )
+
+    return " ".join(parts)
 
 
 async def generate_page_images(
