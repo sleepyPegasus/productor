@@ -366,6 +366,30 @@ export async function updateProject(id, updates) {
   return res.json();
 }
 
+/**
+ * Save design settings (globalStyle, selectedPresetId, pageImageConfigs) to DB.
+ * @param {string} projectId
+ * @param {object} settings - { selectedPresetId, globalStyle, pageImageConfigs }
+ */
+export async function saveDesignSettings(projectId, settings) {
+  // Strip referenceImage data URLs from pageImageConfigs to avoid huge payloads
+  const cleanConfigs = {}
+  if (settings.pageImageConfigs) {
+    for (const [pageId, config] of Object.entries(settings.pageImageConfigs)) {
+      const { referenceImage, ...rest } = config || {}
+      cleanConfigs[pageId] = rest
+    }
+  }
+  const payload = {
+    design_settings: JSON.stringify({
+      selectedPresetId: settings.selectedPresetId || null,
+      globalStyle: settings.globalStyle || {},
+      pageImageConfigs: cleanConfigs,
+    }),
+  }
+  return updateProject(projectId, payload)
+}
+
 export async function deleteProject(id) {
   const res = await fetch(`${BASE}/projects/${id}`, { method: 'DELETE', headers: getAuthHeadersOnly() });
   if (!res.ok) throw new Error('删除项目失败');

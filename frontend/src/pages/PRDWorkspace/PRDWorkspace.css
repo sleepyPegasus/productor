@@ -2051,6 +2051,20 @@
   flex: 1;
 }
 
+.style-thumb-swatches {
+  display: flex;
+  gap: 4px;
+  padding: 3px 4px;
+  background: #fafafa;
+  border-top: 1px solid var(--border-light);
+}
+.style-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* -------- PRD Section Selection -------- */
 .prd-section-heading {
   position: relative;

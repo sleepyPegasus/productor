@@ -1,5 +1,6 @@
 """Image generation client via OpenRouter (chat completions with modalities)."""
 
+import asyncio
 import base64
 import io
 import logging
@@ -13,9 +14,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Maximum dimension (width or height) for reference images sent to the API.
-_MAX_REF_IMAGE_DIMENSION = 1024
+_MAX_REF_IMAGE_DIMENSION = 512
 # JPEG quality for compressed reference images.
-_REF_IMAGE_QUALITY = 80
+_REF_IMAGE_QUALITY = 60
+# Maximum allowed size (in bytes) for the compressed reference image base64
+# string.  Anything larger is dropped with a warning.
+_MAX_REF_IMAGE_BASE64_BYTES = 500_000  # ~500 KB
 
 
 def _compress_reference_image(data_url: str) -> str:
@@ -58,6 +62,14 @@ def _compress_reference_image(data_url: str) -> str:
             "Reference image compressed: ~%d KB -> ~%d KB",
             original_kb, compressed_kb,
         )
+
+        # Safety check: if still too large, return empty to avoid upstream errors
+        if len(compressed) > _MAX_REF_IMAGE_BASE64_BYTES:
+            logger.warning(
+                "Compressed reference image still too large (%d KB), dropping it",
+                compressed_kb,
+            )
+            return ""
 
         return f"data:image/jpeg;base64,{compressed}"
     except Exception as e:
@@ -139,6 +151,7 @@ async def generate_image(
 
     If ``reference_image`` is provided (a data URL or HTTP URL), it is included
     as a multimodal content part so the model can use it as visual reference.
+    Retries up to 2 times with exponential backoff on transient errors.
     """
     if not settings.OPENROUTER_API_KEY:
         logger.warning("OPENROUTER_API_KEY is not configured, cannot generate image")
@@ -153,14 +166,21 @@ async def generate_image(
     }
 
     # Build message content – multimodal when reference image is provided
+    use_reference = False
     if reference_image:
         # Compress reference image to avoid oversized payloads that cause
         # the upstream API server to disconnect.
         compressed_ref = _compress_reference_image(reference_image)
-        content = [
-            {"type": "text", "text": f"请参考以下图片的设计风格和布局来生成新的界面设计图。\n\n{prompt}"},
-            {"type": "image_url", "image_url": {"url": compressed_ref}},
-        ]
+        if compressed_ref:
+            content = [
+                {"type": "text", "text": f"请参考以下图片的设计风格和布局来生成新的界面设计图。\n\n{prompt}"},
+                {"type": "image_url", "image_url": {"url": compressed_ref}},
+            ]
+            use_reference = True
+        else:
+            # Compression returned empty (image too large), fall back to text-only
+            logger.warning("Reference image too large after compression, generating without it")
+            content = prompt
     else:
         content = prompt
 
@@ -176,32 +196,60 @@ async def generate_image(
     # can take a while, especially with multimodal input.
     timeout = httpx.Timeout(connect=30, write=60, read=300, pool=30)
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            image_url = _extract_image_url(data)
-            if not image_url:
-                # Log response structure for debugging
-                msg_keys = []
-                choices = data.get("choices", [])
-                if choices:
-                    msg = choices[0].get("message", {})
-                    msg_keys = list(msg.keys())
-                logger.warning(
-                    "Image generation returned no image (model=%s): "
-                    "top_keys=%s, message_keys=%s",
-                    image_model, list(data.keys()), msg_keys,
-                )
-            return image_url
-    except httpx.HTTPStatusError as e:
-        logger.error(
-            "Image generation HTTP error (model=%s): %s - %s",
-            image_model, e.response.status_code, e.response.text[:500],
-        )
-    except httpx.TimeoutException:
-        logger.error("Image generation timed out (model=%s)", image_model)
-    except Exception as e:
-        logger.error("Image generation failed (model=%s): %s", image_model, e)
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                image_url = _extract_image_url(data)
+                if not image_url:
+                    # Log response structure for debugging
+                    msg_keys = []
+                    choices = data.get("choices", [])
+                    if choices:
+                        msg = choices[0].get("message", {})
+                        msg_keys = list(msg.keys())
+                    logger.warning(
+                        "Image generation returned no image (model=%s): "
+                        "top_keys=%s, message_keys=%s",
+                        image_model, list(data.keys()), msg_keys,
+                    )
+                return image_url
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "Image generation HTTP error (model=%s): %s - %s",
+                image_model, e.response.status_code, e.response.text[:500],
+            )
+            # Don't retry client errors (4xx)
+            if e.response.status_code < 500:
+                break
+        except httpx.TimeoutException:
+            logger.error("Image generation timed out (model=%s, attempt=%d)", image_model, attempt + 1)
+        except Exception as e:
+            err_str = str(e).lower()
+            is_transient = any(kw in err_str for kw in (
+                "incomplete", "connection", "closed", "chunked", "reset", "timeout",
+            ))
+            logger.error("Image generation failed (model=%s, attempt=%d): %s", image_model, attempt + 1, e)
+            if not is_transient:
+                # On the first attempt with a reference image, try once without it
+                if use_reference and attempt == 0:
+                    logger.info("Retrying without reference image after non-transient error")
+                    payload["messages"][0]["content"] = prompt
+                    use_reference = False
+                    continue
+                break
+
+        if attempt < max_retries:
+            wait = 2 ** (attempt + 1)  # 2s, 4s
+            logger.info("Retrying image generation in %ds (attempt %d/%d)...", wait, attempt + 1, max_retries + 1)
+            # On the last retry with a reference image, drop the reference to reduce payload
+            if use_reference and attempt == max_retries - 1:
+                logger.info("Dropping reference image for final retry to reduce payload size")
+                payload["messages"][0]["content"] = prompt
+                use_reference = False
+            await asyncio.sleep(wait)
+
     return None

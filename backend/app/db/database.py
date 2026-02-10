@@ -119,6 +119,7 @@ def init_db():
         ("default_image_ratio", "''"),
         ("category", "'active'"),
         ("owner_id", "''"),
+        ("design_settings", "'{}'"),
     ]:
         try:
             conn.execute(f"SELECT {col} FROM projects LIMIT 1")
@@ -159,7 +160,8 @@ _ALLOWED_PROJECT_COLUMNS = frozenset({
     "chat_model", "image_model", "comprehensive_model",
     "default_image_resolution", "default_image_ratio",
     "raw_requirement", "structured_requirement", "pages_plan",
-    "prd_content", "design_images", "history", "chat_history",
+    "prd_content", "design_images", "design_settings",
+    "history", "chat_history",
     "prd_versions", "design_versions",
     "comprehensive_content", "comprehensive_versions",
     "updated_at",

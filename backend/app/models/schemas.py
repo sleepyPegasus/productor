@@ -98,6 +98,7 @@ class ProjectUpdate(BaseModel):
     comprehensive_model: Optional[str] = Field(None, max_length=100)
     default_image_resolution: Optional[str] = Field(None, max_length=50)
     default_image_ratio: Optional[str] = Field(None, max_length=20)
+    design_settings: Optional[str] = Field(None, description="JSON string of design settings (globalStyle, selectedPresetId, pageImageConfigs)")
 
 
 class PrdContentUpdate(BaseModel):
@@ -121,6 +122,7 @@ class ProjectResponse(BaseModel):
     structured_requirement: Optional[str] = None
     pages_plan: Optional[str] = None
     design_images: Optional[str] = None
+    design_settings: Optional[str] = None
     comprehensive_content: Optional[str] = None
     history: Optional[str] = None
     created_at: str

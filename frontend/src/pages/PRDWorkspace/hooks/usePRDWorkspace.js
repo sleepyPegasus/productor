@@ -47,6 +47,8 @@ export function usePRDWorkspace(user) {
     setImages: setDesignImages,
     setPagesList,
     setGlobalStyle,
+    setSelectedPresetId,
+    setPageImageConfigs,
     setVersions: setDesignVersions,
   } = useDesignStore()
 
@@ -108,9 +110,16 @@ export function usePRDWorkspace(user) {
             if (plan.pages && Array.isArray(plan.pages)) {
               setPagesList(plan.pages)
             }
-            if (plan.globalStyle) {
-              setGlobalStyle(plan.globalStyle)
-            }
+          } catch { /* ignore */ }
+        }
+
+        // Parse design settings (globalStyle, selectedPresetId, pageImageConfigs)
+        if (proj.design_settings) {
+          try {
+            const ds = JSON.parse(proj.design_settings)
+            if (ds.globalStyle) setGlobalStyle(ds.globalStyle)
+            if (ds.selectedPresetId) setSelectedPresetId(ds.selectedPresetId)
+            if (ds.pageImageConfigs) setPageImageConfigs(ds.pageImageConfigs)
           } catch { /* ignore */ }
         }
 

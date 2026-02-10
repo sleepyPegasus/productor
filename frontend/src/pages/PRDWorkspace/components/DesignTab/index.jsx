@@ -9,7 +9,7 @@
  */
 import { useCallback, useRef, useMemo } from 'react'
 import { useDesignStore } from '../../../../stores'
-import { generateDesigns, generateSinglePageDesign } from '../../../../services/api'
+import { generateDesigns, generateSinglePageDesign, saveDesignSettings } from '../../../../services/api'
 
 // ---------------------------------------------------------------------------
 // Style Presets for ToB Management Systems
@@ -90,18 +90,35 @@ const STYLE_PRESETS = [
 ]
 
 /**
- * Render a mini thumbnail of the layout style
+ * Render a mini thumbnail of the layout style with enhanced visual details
  */
 function StyleThumbnail({ colors }) {
+  const isDarkSidebar = colors.sideNav === '#001529'
+  const isDarkTopNav = colors.topNav !== '#ffffff' && colors.topNav !== '#fafafa'
+  const menuInactive = isDarkSidebar ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)'
+
   return (
     <div className="style-thumb">
-      {/* Top nav bar */}
+      {/* Top nav bar with logo + search + avatar */}
       <div
         className="style-thumb-topnav"
-        style={{ background: colors.topNav, borderBottom: colors.topNav === '#ffffff' || colors.topNav === '#fafafa' ? '1px solid #e0e0e0' : 'none' }}
-      />
+        style={{
+          background: colors.topNav,
+          borderBottom: !isDarkTopNav ? '1px solid #e0e0e0' : 'none',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 4px',
+          gap: 3,
+        }}
+      >
+        <div style={{ width: 12, height: 4, borderRadius: 1, background: isDarkTopNav ? 'rgba(255,255,255,0.7)' : colors.accent, flexShrink: 0 }} />
+        <div style={{ flex: 1 }} />
+        <div style={{ width: 16, height: 3, borderRadius: 1, background: isDarkTopNav ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+        <div style={{ flex: 1 }} />
+        <div style={{ width: 5, height: 5, borderRadius: '50%', background: isDarkTopNav ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.12)', flexShrink: 0 }} />
+      </div>
       <div className="style-thumb-body">
-        {/* Side nav */}
+        {/* Side nav with menu items */}
         <div
           className="style-thumb-sidenav"
           style={{
@@ -110,14 +127,32 @@ function StyleThumbnail({ colors }) {
           }}
         >
           <div className="style-thumb-menu-item" style={{ background: colors.accent, opacity: 0.8 }} />
-          <div className="style-thumb-menu-item" style={{ background: colors.sideNav === '#001529' || colors.sideNav === '#001529' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }} />
-          <div className="style-thumb-menu-item" style={{ background: colors.sideNav === '#001529' || colors.sideNav === '#001529' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }} />
+          <div className="style-thumb-menu-item" style={{ background: menuInactive }} />
+          <div className="style-thumb-menu-item" style={{ background: menuInactive }} />
+          <div className="style-thumb-menu-item" style={{ background: menuInactive, opacity: 0.5 }} />
         </div>
-        {/* Content area */}
+        {/* Content area with cards and table-like elements */}
         <div className="style-thumb-content" style={{ background: colors.content }}>
-          <div className="style-thumb-card" />
-          <div className="style-thumb-card style-thumb-card-wide" />
+          {/* Stat cards row */}
+          <div style={{ display: 'flex', gap: 2, height: '28%' }}>
+            <div style={{ flex: 1, background: '#fff', borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+            <div style={{ flex: 1, background: '#fff', borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+            <div style={{ flex: 1, background: '#fff', borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+          </div>
+          {/* Table card */}
+          <div style={{ flex: 1, background: '#fff', borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', padding: 2, gap: 1 }}>
+            <div style={{ height: 3, background: colors.accent, opacity: 0.15, borderRadius: 1 }} />
+            <div style={{ height: 2, background: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />
+            <div style={{ height: 2, background: 'rgba(0,0,0,0.04)', borderRadius: 1 }} />
+          </div>
         </div>
+      </div>
+      {/* Color swatches strip */}
+      <div className="style-thumb-swatches">
+        <span className="style-swatch" style={{ background: colors.topNav, border: colors.topNav === '#ffffff' || colors.topNav === '#fafafa' ? '1px solid #ddd' : 'none' }} />
+        <span className="style-swatch" style={{ background: colors.sideNav, border: colors.sideNav === '#ffffff' || colors.sideNav === '#f6ffed' || colors.sideNav === '#f5f5f5' ? '1px solid #ddd' : 'none' }} />
+        <span className="style-swatch" style={{ background: colors.accent }} />
+        <span className="style-swatch" style={{ background: colors.content, border: '1px solid #ddd' }} />
       </div>
     </div>
   )
@@ -161,6 +196,7 @@ export default function DesignTab({ projectId, canEdit }) {
     setError,
     setCurrentSlideIndex,
     addImage,
+    updatePageConfig,
     nextSlide,
     prevSlide,
   } = useDesignStore()
@@ -251,10 +287,16 @@ export default function DesignTab({ projectId, canEdit }) {
     }
   }, [setSelectedPresetId, setGlobalStyle])
 
-  // Handle applying global style
+  // Handle applying global style and persist to DB
   const handleApplyGlobalStyle = useCallback(() => {
     setShowGlobalStyleModal(false)
-  }, [setShowGlobalStyleModal])
+    // Save design settings to database
+    saveDesignSettings(projectId, {
+      selectedPresetId,
+      globalStyle,
+      pageImageConfigs,
+    }).catch((err) => console.warn('Failed to save design settings:', err))
+  }, [projectId, setShowGlobalStyleModal, selectedPresetId, globalStyle, pageImageConfigs])
 
   // Check if page has generated image
   const pageHasImage = useCallback((pageId) => {
